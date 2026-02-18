@@ -101,6 +101,11 @@ const MOOD_CONFIG = {
 }
 
 // ============================================
+// SISTEMA DE GUARDADO - VERSIÓN 4.0
+// ============================================
+const SAVE_KEY = 'regenmon_save_v4'
+
+// ============================================
 // FUNCIONES DE UTILIDAD
 // ============================================
 
@@ -451,59 +456,68 @@ function DragonRevealPage({ regenmonData, onStartGame }) {
 }
 
 // ============================================
-// VISTA 5: JUEGO PRINCIPAL
+// VISTA 5: JUEGO PRINCIPAL (v4.0 - Sin estado local de guardado)
 // ============================================
 
-function GamePage({ regenmonData, onReset }) {
+function GamePage({
+  regenmonData,
+  setRegenmon,
+  stats,
+  setStats,
+  resources,
+  setResources,
+  cooldowns,
+  setCooldowns,
+  dailyUses,
+  setDailyUses,
+  onReset
+}) {
   const element = ELEMENTS.find(e => e.id === regenmonData.class)
   const folder = ELEMENT_TO_FOLDER[regenmonData.class]
   const elementBonus = ELEMENT_BONUSES[regenmonData.class] || {}
-
-  const [gameState, setGameState] = useState(() => {
-    const saved = localStorage.getItem('regenmonGameSave')
-    if (saved) {
-      try {
-        const data = JSON.parse(saved)
-        if (data.regenmon?.name === regenmonData.name && data.regenmon?.class === regenmonData.class) return data
-      } catch (e) {}
-    }
-    return { regenmon: { ...regenmonData, level: 1, exp: 0, maturityState: 1 }, stats: { hunger: 100, energy: 100, happiness: 100 }, resources: { food: 10, maxFood: 50, lastFoodGenTime: Date.now(), lastHungerDecay: Date.now() }, cooldowns: { feed: 0, train: 0, play: 0, rest: 0 }, dailyUses: { feed: 0, train: 0, play: 0, lastReset: new Date().toDateString() }, lastSave: Date.now() }
-  })
 
   const [isLevelingUp, setIsLevelingUp] = useState(false)
   const [isEvolving, setIsEvolving] = useState(false)
   const [showResetConfirm, setShowResetConfirm] = useState(false)
   const [actionAnimations, setActionAnimations] = useState({})
 
-  const { regenmon, stats, resources, cooldowns, dailyUses } = gameState
+  const regenmon = regenmonData
   const mood = calculateMood(stats)
   const moodConfig = MOOD_CONFIG[mood]
   const maturityState = getMaturityState(regenmon.level)
 
+  // Verificar reset diario
   useEffect(() => {
     const today = new Date().toDateString()
-    if (dailyUses.lastReset !== today) setGameState(prev => ({ ...prev, dailyUses: { feed: 0, train: 0, play: 0, lastReset: today } }))
+    if (dailyUses.lastReset !== today) {
+      setDailyUses({ feed: 0, train: 0, play: 0, lastReset: today })
+    }
   }, [dailyUses.lastReset])
 
+  // Actualizar cooldowns
   useEffect(() => {
-    const interval = setInterval(() => setGameState(prev => ({ ...prev, cooldowns: { feed: Math.max(0, prev.cooldowns.feed - 1000), train: Math.max(0, prev.cooldowns.train - 1000), play: Math.max(0, prev.cooldowns.play - 1000), rest: Math.max(0, prev.cooldowns.rest - 1000) } })), 1000)
+    const interval = setInterval(() => {
+      setCooldowns(prev => ({
+        feed: Math.max(0, prev.feed - 1000),
+        train: Math.max(0, prev.train - 1000),
+        play: Math.max(0, prev.play - 1000),
+        rest: Math.max(0, prev.rest - 1000),
+      }))
+    }, 1000)
     return () => clearInterval(interval)
   }, [])
 
   // GENERACIÓN DE COMIDA
   useEffect(() => {
     const interval = setInterval(() => {
-      setGameState(prev => {
-        const elapsed = Date.now() - prev.resources.lastFoodGenTime
+      setResources(prev => {
+        const elapsed = Date.now() - prev.lastFoodGenTime
         if (elapsed >= TIMERS.foodGeneration) {
-          const newFood = Math.min(prev.resources.food + 1, prev.resources.maxFood)
+          const newFood = Math.min(prev.food + 1, prev.maxFood)
           return {
             ...prev,
-            resources: {
-              ...prev.resources,
-              food: newFood,
-              lastFoodGenTime: Date.now()
-            }
+            food: newFood,
+            lastFoodGenTime: Date.now()
           }
         }
         return prev
@@ -512,40 +526,31 @@ function GamePage({ regenmonData, onReset }) {
     return () => clearInterval(interval)
   }, [])
 
-  // CONSUMO DE HAMBRE (-1 cada 10 segundos)
+  // CONSUMO DE HAMBRE (-1 cada 20 segundos)
   useEffect(() => {
     const interval = setInterval(() => {
-      setGameState(prev => {
-        const elapsed = Date.now() - (prev.resources.lastHungerDecay || Date.now())
+      setResources(prev => {
+        const elapsed = Date.now() - (prev.lastHungerDecay || Date.now())
         if (elapsed >= TIMERS.hungerDecay) {
-          const newHunger = Math.max(0, prev.stats.hunger - 1)
+          const newHunger = Math.max(0, stats.hunger - 1)
+          setStats(s => ({ ...s, hunger: newHunger }))
           return {
             ...prev,
-            stats: {
-              ...prev.stats,
-              hunger: newHunger
-            },
-            resources: {
-              ...prev.resources,
-              lastHungerDecay: Date.now()
-            }
+            lastHungerDecay: Date.now()
           }
         }
         return prev
       })
     }, 1000)
     return () => clearInterval(interval)
-  }, [])
+  }, [stats.hunger])
 
   // CONSUMO DE FELICIDAD (-1 cada 20 segundos)
   useEffect(() => {
     const interval = setInterval(() => {
-      setGameState(prev => ({
+      setStats(prev => ({
         ...prev,
-        stats: {
-          ...prev.stats,
-          happiness: Math.max(0, prev.stats.happiness - 1)
-        }
+        happiness: Math.max(0, prev.happiness - 1)
       }))
     }, TIMERS.happinessDecay)
     return () => clearInterval(interval)
@@ -555,33 +560,38 @@ function GamePage({ regenmonData, onReset }) {
   useEffect(() => {
     if (stats.hunger === 0) {
       const interval = setInterval(() => {
-        setGameState(prev => ({
+        setStats(prev => ({
           ...prev,
-          stats: {
-            ...prev.stats,
-            happiness: Math.max(0, prev.stats.happiness - 2)
-          }
+          happiness: Math.max(0, prev.happiness - 2)
         }))
       }, TIMERS.starvingPenalty)
       return () => clearInterval(interval)
     }
   }, [stats.hunger])
 
-  useEffect(() => {
-    const interval = setInterval(() => localStorage.setItem('regenmonGameSave', JSON.stringify({ ...gameState, lastSave: Date.now() })), 30000)
-    return () => clearInterval(interval)
-  }, [gameState])
-
   const addExperience = (amount) => {
     let expGain = amount * moodConfig.expModifier
     if (elementBonus.trainingExpBonus && amount === ACTIONS.train.effects.exp) expGain *= (1 + elementBonus.trainingExpBonus)
     expGain = Math.floor(expGain)
 
-    setGameState(prev => {
-      let newExp = prev.regenmon.exp + expGain, newLevel = prev.regenmon.level, newMaturity = prev.regenmon.maturityState, leveledUp = false, evolved = false
-      while (newLevel < 15 && newExp >= EXP_TABLE[newLevel + 1]) { newLevel++; leveledUp = true; if (newLevel === 5) { newMaturity = 2; evolved = true } if (newLevel === 10) { newMaturity = 3; evolved = true } }
-      if (evolved) { setIsEvolving(true); setTimeout(() => setIsEvolving(false), 1500) } else if (leveledUp) { setIsLevelingUp(true); setTimeout(() => setIsLevelingUp(false), 1000) }
-      return { ...prev, regenmon: { ...prev.regenmon, exp: newExp, level: newLevel, maturityState: newMaturity } }
+    setRegenmon(prev => {
+      let newExp = prev.exp + expGain
+      let newLevel = prev.level
+      let newMaturity = prev.maturityState
+      let leveledUp = false
+      let evolved = false
+
+      while (newLevel < 15 && newExp >= EXP_TABLE[newLevel + 1]) {
+        newLevel++
+        leveledUp = true
+        if (newLevel === 5) { newMaturity = 2; evolved = true }
+        if (newLevel === 10) { newMaturity = 3; evolved = true }
+      }
+
+      if (evolved) { setIsEvolving(true); setTimeout(() => setIsEvolving(false), 1500) }
+      else if (leveledUp) { setIsLevelingUp(true); setTimeout(() => setIsLevelingUp(false), 1000) }
+
+      return { ...prev, exp: newExp, level: newLevel, maturityState: newMaturity }
     })
   }
 
@@ -604,27 +614,39 @@ function GamePage({ regenmonData, onReset }) {
     setActionAnimations(prev => ({ ...prev, [actionKey]: true }))
     setTimeout(() => setActionAnimations(prev => ({ ...prev, [actionKey]: false })), 200)
 
-    setGameState(prev => {
-      const newStats = { ...prev.stats }
-      const newResources = { ...prev.resources }
-      const effects = action.effects
-
-      // Aplicar efectos
+    // Aplicar efectos a stats
+    const effects = action.effects
+    setStats(prev => {
+      const newStats = { ...prev }
       if (effects.hunger !== undefined) newStats.hunger = Math.max(0, Math.min(100, newStats.hunger + effects.hunger))
       if (effects.energy !== undefined) newStats.energy = Math.max(0, Math.min(100, newStats.energy + effects.energy))
       if (effects.happiness !== undefined) newStats.happiness = Math.max(0, Math.min(100, newStats.happiness + effects.happiness))
-      if (effects.foodCost !== undefined) newResources.food = Math.max(0, newResources.food - effects.foodCost)
-
-      return {
-        ...prev,
-        stats: newStats,
-        resources: newResources,
-        cooldowns: { ...prev.cooldowns, [actionKey]: action.cooldown },
-        dailyUses: action.noDailyLimit ? prev.dailyUses : { ...prev.dailyUses, [actionKey]: prev.dailyUses[actionKey] + 1 }
-      }
+      return newStats
     })
 
-    // Dar EXP a todas las acciones
+    // Aplicar costo de comida
+    if (effects.foodCost !== undefined) {
+      setResources(prev => ({
+        ...prev,
+        food: Math.max(0, prev.food - effects.foodCost)
+      }))
+    }
+
+    // Actualizar cooldown
+    setCooldowns(prev => ({
+      ...prev,
+      [actionKey]: action.cooldown
+    }))
+
+    // Actualizar usos diarios
+    if (!action.noDailyLimit) {
+      setDailyUses(prev => ({
+        ...prev,
+        [actionKey]: prev[actionKey] + 1
+      }))
+    }
+
+    // Dar EXP
     if (action.effects.exp) addExperience(action.effects.exp)
   }
 
@@ -828,7 +850,7 @@ function GamePage({ regenmonData, onReset }) {
             <p className="text-red-400 text-sm mb-6 font-medium">Esta acción NO se puede deshacer.</p>
             <div className="flex gap-3">
               <button onClick={() => setShowResetConfirm(false)} className="flex-1 py-3 rounded-lg bg-gray-700 text-white font-medium hover:bg-gray-600 transition-colors">Cancelar</button>
-              <button onClick={() => { localStorage.removeItem('regenmonGameSave'); onReset() }} className="flex-1 py-3 rounded-lg bg-red-600 text-white font-medium hover:bg-red-500 transition-colors">Reiniciar</button>
+              <button onClick={() => { setShowResetConfirm(false); onReset() }} className="flex-1 py-3 rounded-lg bg-red-600 text-white font-medium hover:bg-red-500 transition-colors">Reiniciar</button>
             </div>
           </div>
         </div>
@@ -838,20 +860,292 @@ function GamePage({ regenmonData, onReset }) {
 }
 
 // ============================================
-// APP PRINCIPAL
+// APP PRINCIPAL - CON SISTEMA DE GUARDADO v4.0
 // ============================================
 
 function App() {
   const [currentView, setCurrentView] = useState('landing')
-  const [regenmonData, setRegenmonData] = useState(null)
+  const [regenmon, setRegenmon] = useState(null)
+  const [stats, setStats] = useState({ hunger: 100, energy: 100, happiness: 100 })
+  const [resources, setResources] = useState({ food: 10, maxFood: 50, lastFoodGenTime: Date.now(), lastHungerDecay: Date.now() })
+  const [cooldowns, setCooldowns] = useState({ feed: 0, train: 0, play: 0, rest: 0 })
+  const [dailyUses, setDailyUses] = useState({ feed: 0, train: 0, play: 0, lastReset: new Date().toDateString() })
+  const [meta, setMeta] = useState({ lastSaved: 0, createdAt: 0 })
+  const [isLoading, setIsLoading] = useState(true)
+
+  // ============================================
+  // FUNCIONES DE GUARDADO
+  // ============================================
+
+  const saveGame = () => {
+    if (!regenmon) return
+
+    try {
+      const saveData = {
+        regenmon,
+        stats,
+        resources,
+        cooldowns,
+        dailyUses,
+        meta: {
+          lastSaved: Date.now(),
+          createdAt: meta.createdAt || Date.now(),
+        },
+        gameState: {
+          currentView,
+          hasRegenmon: true,
+        },
+      }
+
+      localStorage.setItem(SAVE_KEY, JSON.stringify(saveData))
+      console.log('💾 Partida guardada:', new Date().toLocaleTimeString())
+    } catch (error) {
+      console.error('Error al guardar:', error)
+    }
+  }
+
+  const loadGame = () => {
+    try {
+      const savedData = localStorage.getItem(SAVE_KEY)
+
+      if (!savedData) {
+        console.log('🆕 No hay partida guardada, iniciando nuevo juego')
+        return null
+      }
+
+      const data = JSON.parse(savedData)
+      console.log('📂 Partida cargada:', data)
+      return data
+    } catch (error) {
+      console.error('Error al cargar:', error)
+      return null
+    }
+  }
+
+  const deleteSave = () => {
+    localStorage.removeItem(SAVE_KEY)
+    console.log('🗑️ Partida borrada')
+  }
+
+  // ============================================
+  // APLICAR DEGRADACIÓN PASIVA
+  // ============================================
+
+  const applyPassiveDecay = (lastSavedTimestamp) => {
+    const now = Date.now()
+    const timePassed = now - lastSavedTimestamp // en milisegundos
+
+    if (timePassed <= 0) return
+
+    const intervalsHunger = Math.floor(timePassed / TIMERS.hungerDecay)
+    const intervalsHappiness = Math.floor(timePassed / TIMERS.happinessDecay)
+    const foodGenerated = Math.floor(timePassed / TIMERS.foodGeneration)
+
+    console.log(`⏰ Tiempo pasado: ${Math.floor(timePassed / 1000)}s`)
+
+    // Aplicar degradación de hambre
+    if (intervalsHunger > 0) {
+      setStats(prev => ({
+        ...prev,
+        hunger: Math.max(0, prev.hunger - intervalsHunger),
+      }))
+      console.log(`🍖 Hambre reducida en ${intervalsHunger}`)
+    }
+
+    // Aplicar degradación de felicidad
+    if (intervalsHappiness > 0) {
+      setStats(prev => ({
+        ...prev,
+        happiness: Math.max(0, prev.happiness - intervalsHappiness),
+      }))
+      console.log(`😊 Felicidad reducida en ${intervalsHappiness}`)
+    }
+
+    // Generar comida pasiva
+    if (foodGenerated > 0) {
+      setResources(prev => ({
+        ...prev,
+        food: Math.min(prev.maxFood, prev.food + foodGenerated),
+        lastFoodGenTime: now,
+      }))
+      console.log(`🍖 Comida generada: +${foodGenerated}`)
+    }
+
+    // Actualizar timestamp de última generación
+    setResources(prev => ({
+      ...prev,
+      lastHungerDecay: now,
+    }))
+  }
+
+  // ============================================
+  // CARGAR PARTIDA AL INICIAR
+  // ============================================
+
+  useEffect(() => {
+    const savedData = loadGame()
+
+    if (savedData && savedData.gameState?.hasRegenmon) {
+      // Restaurar estado desde localStorage
+      setRegenmon(savedData.regenmon)
+      setStats(savedData.stats)
+      setResources(savedData.resources)
+      setCooldowns(savedData.cooldowns || { feed: 0, train: 0, play: 0, rest: 0 })
+      setDailyUses(savedData.dailyUses)
+      setMeta(savedData.meta)
+
+      // Verificar si cambió el día para resetear dailyUses
+      const today = new Date().toDateString()
+      if (savedData.dailyUses.lastReset !== today) {
+        setDailyUses({ feed: 0, train: 0, play: 0, lastReset: today })
+      }
+
+      // Calcular degradación pasiva desde último guardado
+      if (savedData.meta?.lastSaved) {
+        applyPassiveDecay(savedData.meta.lastSaved)
+      }
+
+      // Ir directo al juego
+      setCurrentView('game')
+      console.log('✅ Partida restaurada')
+    } else {
+      // No hay partida, mostrar landing
+      setCurrentView('landing')
+    }
+
+    setIsLoading(false)
+  }, [])
+
+  // ============================================
+  // GUARDAR AUTOMÁTICAMENTE
+  // ============================================
+
+  // Guardar cuando cambian los datos importantes
+  useEffect(() => {
+    if (regenmon && currentView === 'game') {
+      saveGame()
+    }
+  }, [regenmon, stats, resources, dailyUses])
+
+  // Guardar cada 30 segundos como backup
+  useEffect(() => {
+    if (currentView !== 'game' || !regenmon) return
+
+    const autoSaveInterval = setInterval(() => {
+      saveGame()
+    }, 30000) // 30 segundos
+
+    return () => clearInterval(autoSaveInterval)
+  }, [currentView, regenmon, stats, resources])
+
+  // Guardar al cerrar/recargar la página
+  useEffect(() => {
+    const handleBeforeUnload = () => {
+      if (regenmon) {
+        saveGame()
+      }
+    }
+
+    window.addEventListener('beforeunload', handleBeforeUnload)
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload)
+  }, [regenmon, stats, resources])
+
+  // ============================================
+  // CREAR NUEVO REGENMON
+  // ============================================
+
+  const handleCreateRegenmon = (name, elementId) => {
+    setRegenmon({ name, class: elementId, dragonId: null, level: 1, exp: 0, maturityState: 1 })
+    setStats({ hunger: 100, energy: 100, happiness: 100 })
+    setResources({ food: 10, maxFood: 50, lastFoodGenTime: Date.now(), lastHungerDecay: Date.now() })
+    setCooldowns({ feed: 0, train: 0, play: 0, rest: 0 })
+    setDailyUses({ feed: 0, train: 0, play: 0, lastReset: new Date().toDateString() })
+    setMeta({ lastSaved: Date.now(), createdAt: Date.now() })
+    setCurrentView('hatching')
+  }
+
+  // ============================================
+  // REINICIAR JUEGO
+  // ============================================
+
+  const handleReset = () => {
+    // Borrar localStorage
+    deleteSave()
+
+    // Resetear estados
+    setRegenmon(null)
+    setStats({ hunger: 100, energy: 100, happiness: 100 })
+    setResources({ food: 10, maxFood: 50, lastFoodGenTime: Date.now(), lastHungerDecay: Date.now() })
+    setCooldowns({ feed: 0, train: 0, play: 0, rest: 0 })
+    setDailyUses({ feed: 0, train: 0, play: 0, lastReset: new Date().toDateString() })
+    setMeta({ lastSaved: 0, createdAt: 0 })
+    setCurrentView('landing')
+
+    console.log('🗑️ Juego reiniciado')
+  }
+
+  // ============================================
+  // PANTALLA DE CARGA
+  // ============================================
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center bg-[#0a0a0f]">
+        <div className="w-12 h-12 border-4 border-white/10 border-t-[#8b5cf6] rounded-full animate-spin mb-4"></div>
+        <p className="text-gray-400">Cargando...</p>
+      </div>
+    )
+  }
+
+  // ============================================
+  // RENDER
+  // ============================================
 
   return (
     <div className="font-sans">
-      {currentView === 'landing' && <LandingPage onPlayClick={() => setCurrentView('register')} />}
-      {currentView === 'register' && <RegisterPage onBack={() => setCurrentView('landing')} onCreate={(name, el) => { setRegenmonData({ name, class: el }); setCurrentView('hatching') }} />}
-      {currentView === 'hatching' && regenmonData && <HatchingPage regenmonData={regenmonData} onHatchComplete={(id) => { setRegenmonData(prev => ({ ...prev, dragonId: id })); setCurrentView('dragon-reveal') }} />}
-      {currentView === 'dragon-reveal' && regenmonData && <DragonRevealPage regenmonData={regenmonData} onStartGame={() => setCurrentView('game')} />}
-      {currentView === 'game' && regenmonData && <GamePage regenmonData={regenmonData} onReset={() => { setRegenmonData(null); setCurrentView('landing') }} />}
+      {currentView === 'landing' && (
+        <LandingPage onPlayClick={() => setCurrentView('register')} />
+      )}
+
+      {currentView === 'register' && (
+        <RegisterPage
+          onBack={() => setCurrentView('landing')}
+          onCreate={handleCreateRegenmon}
+        />
+      )}
+
+      {currentView === 'hatching' && regenmon && (
+        <HatchingPage
+          regenmonData={regenmon}
+          onHatchComplete={(dragonId) => {
+            setRegenmon(prev => ({ ...prev, dragonId }))
+            setCurrentView('dragon-reveal')
+          }}
+        />
+      )}
+
+      {currentView === 'dragon-reveal' && regenmon && (
+        <DragonRevealPage
+          regenmonData={regenmon}
+          onStartGame={() => setCurrentView('game')}
+        />
+      )}
+
+      {currentView === 'game' && regenmon && (
+        <GamePage
+          regenmonData={regenmon}
+          setRegenmon={setRegenmon}
+          stats={stats}
+          setStats={setStats}
+          resources={resources}
+          setResources={setResources}
+          cooldowns={cooldowns}
+          setCooldowns={setCooldowns}
+          dailyUses={dailyUses}
+          setDailyUses={setDailyUses}
+          onReset={handleReset}
+        />
+      )}
     </div>
   )
 }
