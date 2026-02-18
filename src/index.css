@@ -477,7 +477,7 @@ body {
 }
 
 /* ============================================
-   PANEL DE CHAT (v4.2) - BUGS CORREGIDOS
+   PANEL DE CHAT (v4.3) - COLAPSABLE EN MÓVIL
    ============================================ */
 
 .chat-panel {
@@ -492,20 +492,28 @@ body {
   flex-direction: column;
   overflow: hidden;
   flex-shrink: 0;
+  transition: all 0.3s ease;
 }
 
+/* Header del chat */
 .chat-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 10px 12px;
+  padding: 12px 14px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.1);
   background: rgba(0, 0, 0, 0.3);
   flex-shrink: 0;
 }
 
+.chat-header-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .chat-title {
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 600;
   color: white;
 }
@@ -516,6 +524,11 @@ body {
   background: rgba(139, 92, 246, 0.3);
   padding: 2px 6px;
   border-radius: 10px;
+}
+
+/* Botón toggle - OCULTO EN DESKTOP */
+.chat-toggle-button {
+  display: none;
 }
 
 /* Área de mensajes */
@@ -719,7 +732,7 @@ body {
 }
 
 /* ============================================
-   RESPONSIVE - MÓVIL
+   RESPONSIVE - MÓVIL (CHAT COLAPSABLE)
    ============================================ */
 @media (max-width: 768px) {
   /* Recursos en horizontal */
@@ -750,23 +763,92 @@ body {
     max-height: 250px;
   }
 
-  /* Chat ancho completo en móvil */
-  .chat-panel {
+  /* ========== CHAT COLAPSABLE EN MÓVIL ========== */
+
+  /* Panel base en móvil */
+  .chat-panel.mobile {
     width: 100%;
     min-width: 100%;
+    transition: height 0.3s ease, min-height 0.3s ease;
+  }
+
+  /* Estado COLAPSADO */
+  .chat-panel.mobile.collapsed {
+    height: 50px;
+    min-height: 50px;
+    border-radius: 12px;
+  }
+
+  .chat-panel.mobile.collapsed .chat-header {
+    border-bottom: none;
+    border-radius: 12px;
+  }
+
+  /* Estado EXPANDIDO */
+  .chat-panel.mobile.expanded {
     height: 300px;
     min-height: 300px;
   }
 
-  .chat-input-container {
+  /* Header clickeable en móvil */
+  .chat-panel.mobile .chat-header {
+    cursor: pointer;
+    user-select: none;
+    transition: background 0.2s;
+  }
+
+  .chat-panel.mobile .chat-header:hover {
+    background: rgba(255, 255, 255, 0.05);
+  }
+
+  .chat-panel.mobile .chat-header:active {
+    background: rgba(255, 255, 255, 0.1);
+  }
+
+  /* Botón toggle - VISIBLE EN MÓVIL */
+  .chat-panel.mobile .chat-toggle-button {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    background: rgba(255, 255, 255, 0.1);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    border-radius: 8px;
+    color: white;
+    font-size: 12px;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+
+  .chat-panel.mobile .chat-toggle-button:hover {
+    background: rgba(255, 255, 255, 0.2);
+  }
+
+  /* Animación del contenido */
+  .chat-panel.mobile .chat-messages,
+  .chat-panel.mobile .chat-input-container {
+    animation: fadeIn 0.3s ease;
+  }
+
+  @keyframes fadeIn {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+
+  /* Ajustes de input en móvil expandido */
+  .chat-panel.mobile.expanded .chat-input-container {
     padding: 10px;
   }
 
-  .chat-send-button {
+  .chat-panel.mobile.expanded .chat-send-button {
     width: 44px;
     height: 44px;
     min-width: 44px;
-    min-height: 44px;
   }
 }
 
@@ -790,8 +872,14 @@ body {
     max-height: 200px;
   }
 
-  .chat-panel {
+  /* Chat colapsable en móvil pequeño */
+  .chat-panel.mobile.expanded {
     height: 260px;
     min-height: 260px;
+  }
+
+  .chat-panel.mobile.collapsed {
+    height: 48px;
+    min-height: 48px;
   }
 }

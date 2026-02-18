@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 
 // ============================================
-// CONFIGURACIÓN - VERSIÓN 4.2
+// CONFIGURACIÓN - VERSIÓN 4.3
 // ============================================
 
 const ELEMENTS = [
@@ -213,7 +213,7 @@ function StageFlash({ active, color }) {
 }
 
 // ============================================
-// PANEL DE CHAT (v4.1)
+// PANEL DE CHAT (v4.3) - COLAPSABLE EN MÓVIL
 // ============================================
 
 function ChatPanel({ regenmon, stats, onStatsChange }) {
@@ -221,8 +221,22 @@ function ChatPanel({ regenmon, stats, onStatsChange }) {
   const [inputValue, setInputValue] = useState('');
   const [isTyping, setIsTyping] = useState(false);
   const [memories, setMemories] = useState([]);
+  const [isExpanded, setIsExpanded] = useState(false);
+  const [isMobile, setIsMobile] = useState(false);
   const messagesEndRef = useRef(null);
   const inputRef = useRef(null);
+
+  // Detectar si es móvil
+  useEffect(() => {
+    const checkMobile = () => {
+      setIsMobile(window.innerWidth <= 768);
+    };
+
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+
+    return () => window.removeEventListener('resize', checkMobile);
+  }, []);
 
   // Cargar mensajes y memorias de localStorage
   useEffect(() => {
@@ -254,8 +268,24 @@ function ChatPanel({ regenmon, stats, onStatsChange }) {
 
   // Scroll automático al último mensaje
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
+    if (isExpanded || !isMobile) {
+      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [messages, isExpanded, isMobile]);
+
+  // Auto-focus en input cuando se expande en móvil
+  useEffect(() => {
+    if (isMobile && isExpanded) {
+      setTimeout(() => {
+        inputRef.current?.focus();
+      }, 300);
+    }
+  }, [isExpanded, isMobile]);
+
+  // Toggle expandir/colapsar
+  const toggleExpanded = () => {
+    setIsExpanded(prev => !prev);
+  };
 
   // Detectar memorias en el mensaje del usuario
   const detectMemories = (userMessage) => {
@@ -400,66 +430,92 @@ function ChatPanel({ regenmon, stats, onStatsChange }) {
   };
 
   return (
-    <div className="chat-panel">
-      <div className="chat-header">
-        <span className="chat-title">💬 Chat</span>
-        {memories.length > 0 && (
-          <span className="memories-indicator">🧠 {memories.length}</span>
-        )}
-      </div>
+    <div className={`chat-panel ${isMobile ? 'mobile' : 'desktop'} ${isExpanded ? 'expanded' : 'collapsed'}`}>
+      {/* Header - Siempre visible, clickeable en móvil */}
+      <div
+        className="chat-header"
+        onClick={isMobile ? toggleExpanded : undefined}
+        style={{ cursor: isMobile ? 'pointer' : 'default' }}
+      >
+        <div className="chat-header-left">
+          <span className="chat-title">💬 Chat</span>
+          {memories.length > 0 && (
+            <span className="memories-indicator">🧠 {memories.length}</span>
+          )}
+        </div>
 
-      {/* Área de mensajes */}
-      <div className="chat-messages">
-        {messages.length === 0 && (
-          <div className="chat-empty">
-            <p>¡Saluda a {regenmon.name}!</p>
-          </div>
-        )}
-
-        {messages.map((msg) => (
-          <div
-            key={msg.id}
-            className={`chat-bubble ${msg.role === 'user' ? 'user' : 'regenmon'}`}
+        {/* Botón de expandir/colapsar - SOLO EN MÓVIL */}
+        {isMobile && (
+          <button
+            className="chat-toggle-button"
+            onClick={(e) => {
+              e.stopPropagation();
+              toggleExpanded();
+            }}
+            aria-label={isExpanded ? 'Minimizar chat' : 'Expandir chat'}
           >
-            <span className="bubble-content">{msg.content}</span>
-          </div>
-        ))}
-
-        {/* Indicador de escritura */}
-        {isTyping && (
-          <div className="chat-bubble regenmon typing">
-            <span className="typing-indicator">
-              <span className="dot"></span>
-              <span className="dot"></span>
-              <span className="dot"></span>
-            </span>
-          </div>
+            {isExpanded ? '▼' : '▲'}
+          </button>
         )}
-
-        <div ref={messagesEndRef} />
       </div>
 
-      {/* Input de mensaje */}
-      <div className="chat-input-container">
-        <input
-          ref={inputRef}
-          type="text"
-          className="chat-input"
-          placeholder="Escribe un mensaje..."
-          value={inputValue}
-          onChange={(e) => setInputValue(e.target.value)}
-          onKeyPress={handleKeyPress}
-          disabled={isTyping}
-          maxLength={200}
-        />
-        <button
-          className="chat-send-button"
-          onClick={handleSend}
-          disabled={!inputValue.trim() || isTyping}
-        >
-          📤
-        </button>
-      </div>
+      {/* Contenido del chat - Oculto cuando está colapsado en móvil */}
+      {(!isMobile || isExpanded) && (
+        <>
+          {/* Área de mensajes */}
+          <div className="chat-messages">
+            {messages.length === 0 && (
+              <div className="chat-empty">
+                <p>¡Saluda a {regenmon.name}!</p>
+              </div>
+            )}
+
+            {messages.map((msg) => (
+              <div
+                key={msg.id}
+                className={`chat-bubble ${msg.role === 'user' ? 'user' : 'regenmon'}`}
+              >
+                <span className="bubble-content">{msg.content}</span>
+              </div>
+            ))}
+
+            {/* Indicador de escritura */}
+            {isTyping && (
+              <div className="chat-bubble regenmon typing">
+                <span className="typing-indicator">
+                  <span className="dot"></span>
+                  <span className="dot"></span>
+                  <span className="dot"></span>
+                </span>
+              </div>
+            )}
+
+            <div ref={messagesEndRef} />
+          </div>
+
+          {/* Input de mensaje */}
+          <div className="chat-input-container">
+            <input
+              ref={inputRef}
+              type="text"
+              className="chat-input"
+              placeholder="Escribe un mensaje..."
+              value={inputValue}
+              onChange={(e) => setInputValue(e.target.value)}
+              onKeyPress={handleKeyPress}
+              disabled={isTyping}
+              maxLength={200}
+            />
+            <button
+              className="chat-send-button"
+              onClick={handleSend}
+              disabled={!inputValue.trim() || isTyping}
+            >
+              📤
+            </button>
+          </div>
+        </>
+      )}
     </div>
   );
 }
