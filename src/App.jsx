@@ -1,7 +1,7 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 
 // ============================================
-// CONFIGURACIÓN - VERSIÓN 3.9
+// CONFIGURACIÓN - VERSIÓN 4.1
 // ============================================
 
 const ELEMENTS = [
@@ -159,6 +159,13 @@ const getRandomDragonId = (elementId) => {
 }
 
 // ============================================
+// CONSTANTES DE CHAT
+// ============================================
+const CHAT_STORAGE_KEY = 'regenmon_chat';
+const MEMORIES_KEY = 'regenmon_memories';
+const MAX_MESSAGES = 20;
+
+// ============================================
 // COMPONENTES
 // ============================================
 
@@ -203,6 +210,258 @@ function StageFlash({ active, color }) {
       ))}
     </div>
   )
+}
+
+// ============================================
+// PANEL DE CHAT (v4.1)
+// ============================================
+
+function ChatPanel({ regenmon, stats, onStatsChange }) {
+  const [messages, setMessages] = useState([]);
+  const [inputValue, setInputValue] = useState('');
+  const [isTyping, setIsTyping] = useState(false);
+  const [memories, setMemories] = useState([]);
+  const messagesEndRef = useRef(null);
+  const inputRef = useRef(null);
+
+  // Cargar mensajes y memorias de localStorage
+  useEffect(() => {
+    const savedMessages = localStorage.getItem(CHAT_STORAGE_KEY);
+    const savedMemories = localStorage.getItem(MEMORIES_KEY);
+
+    if (savedMessages) {
+      setMessages(JSON.parse(savedMessages));
+    }
+    if (savedMemories) {
+      setMemories(JSON.parse(savedMemories));
+    }
+  }, []);
+
+  // Guardar mensajes en localStorage
+  useEffect(() => {
+    if (messages.length > 0) {
+      const messagesToSave = messages.slice(-MAX_MESSAGES);
+      localStorage.setItem(CHAT_STORAGE_KEY, JSON.stringify(messagesToSave));
+    }
+  }, [messages]);
+
+  // Guardar memorias en localStorage
+  useEffect(() => {
+    if (memories.length > 0) {
+      localStorage.setItem(MEMORIES_KEY, JSON.stringify(memories));
+    }
+  }, [memories]);
+
+  // Scroll automático al último mensaje
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages]);
+
+  // Detectar memorias en el mensaje del usuario
+  const detectMemories = (userMessage) => {
+    const lowerMsg = userMessage.toLowerCase();
+    const newMemories = [];
+
+    // Detectar nombre del usuario
+    const nameMatch = lowerMsg.match(/(?:me llamo|mi nombre es|soy) (\w+)/);
+    if (nameMatch) {
+      newMemories.push(`El nombre de mi dueño es ${nameMatch[1]}`);
+    }
+
+    // Detectar gustos
+    const likeMatch = lowerMsg.match(/(?:me gusta|me encanta|amo) (.+?)(?:\.|,|$)/);
+    if (likeMatch) {
+      newMemories.push(`A mi dueño le gusta ${likeMatch[1]}`);
+    }
+
+    // Detectar color favorito
+    const colorMatch = lowerMsg.match(/(?:mi color favorito es|me gusta el color) (\w+)/);
+    if (colorMatch) {
+      newMemories.push(`El color favorito de mi dueño es ${colorMatch[1]}`);
+    }
+
+    // Agregar nuevas memorias (máximo 10)
+    if (newMemories.length > 0) {
+      setMemories(prev => {
+        const updated = [...prev, ...newMemories].slice(-10);
+        return [...new Set(updated)]; // Eliminar duplicados
+      });
+    }
+  };
+
+  // Enviar mensaje
+  const handleSend = async () => {
+    if (!inputValue.trim() || isTyping) return;
+
+    const userMessage = inputValue.trim();
+    setInputValue('');
+    inputRef.current?.focus();
+
+    // Detectar memorias
+    detectMemories(userMessage);
+
+    // Agregar mensaje del usuario
+    const newUserMessage = {
+      id: Date.now(),
+      role: 'user',
+      content: userMessage,
+      timestamp: new Date().toISOString(),
+    };
+
+    setMessages(prev => [...prev, newUserMessage]);
+
+    // Aplicar efectos en stats
+    onStatsChange(prev => ({
+      ...prev,
+      happiness: Math.min(100, prev.happiness + 5),
+      energy: Math.max(0, prev.energy - 3),
+    }));
+
+    // Mostrar indicador de escritura
+    setIsTyping(true);
+
+    try {
+      // Preparar mensajes para la API (solo los últimos 10 para contexto)
+      const apiMessages = messages.slice(-10).map(m => ({
+        role: m.role,
+        content: m.content,
+      }));
+      apiMessages.push({ role: 'user', content: userMessage });
+
+      // Llamar a la API
+      const response = await fetch('/api/chat', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          messages: apiMessages,
+          regenmonData: {
+            name: regenmon.name,
+            element: regenmon.element,
+            maturityState: regenmon.maturityState,
+            stats: stats,
+            memories: memories,
+          },
+        }),
+      });
+
+      const data = await response.json();
+
+      if (data.error) {
+        throw new Error(data.error);
+      }
+
+      // Pequeño delay para que se sienta natural
+      await new Promise(resolve => setTimeout(resolve, 500));
+
+      // Agregar respuesta del Regenmon
+      const regenmonMessage = {
+        id: Date.now() + 1,
+        role: 'assistant',
+        content: data.reply,
+        timestamp: new Date().toISOString(),
+      };
+
+      setMessages(prev => [...prev, regenmonMessage]);
+
+      // Penalización si hay muchos mensajes seguidos
+      const recentMessages = messages.slice(-5);
+      if (recentMessages.length >= 5) {
+        onStatsChange(prev => ({
+          ...prev,
+          energy: Math.max(0, prev.energy - 5),
+        }));
+      }
+
+    } catch (error) {
+      console.error('Error al enviar mensaje:', error);
+
+      // Mensaje de error del Regenmon
+      const errorMessage = {
+        id: Date.now() + 1,
+        role: 'assistant',
+        content: '😵 *bosteza* Perdón, estoy un poco confundido... ¿Puedes repetir eso?',
+        timestamp: new Date().toISOString(),
+      };
+
+      setMessages(prev => [...prev, errorMessage]);
+    } finally {
+      setIsTyping(false);
+    }
+  };
+
+  // Manejar Enter para enviar
+  const handleKeyPress = (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      handleSend();
+    }
+  };
+
+  return (
+    <div className="chat-panel">
+      <div className="chat-header">
+        <span className="chat-title">💬 Chat</span>
+        {memories.length > 0 && (
+          <span className="memories-indicator">🧠 {memories.length}</span>
+        )}
+      </div>
+
+      {/* Área de mensajes */}
+      <div className="chat-messages">
+        {messages.length === 0 && (
+          <div className="chat-empty">
+            <p>¡Saluda a {regenmon.name}!</p>
+          </div>
+        )}
+
+        {messages.map((msg) => (
+          <div
+            key={msg.id}
+            className={`chat-bubble ${msg.role === 'user' ? 'user' : 'regenmon'}`}
+          >
+            <span className="bubble-content">{msg.content}</span>
+          </div>
+        ))}
+
+        {/* Indicador de escritura */}
+        {isTyping && (
+          <div className="chat-bubble regenmon typing">
+            <span className="typing-indicator">
+              <span className="dot"></span>
+              <span className="dot"></span>
+              <span className="dot"></span>
+            </span>
+          </div>
+        )}
+
+        <div ref={messagesEndRef} />
+      </div>
+
+      {/* Input de mensaje */}
+      <div className="chat-input-container">
+        <input
+          ref={inputRef}
+          type="text"
+          className="chat-input"
+          placeholder="Escribe un mensaje..."
+          value={inputValue}
+          onChange={(e) => setInputValue(e.target.value)}
+          onKeyPress={handleKeyPress}
+          disabled={isTyping}
+          maxLength={200}
+        />
+        <button
+          className="chat-send-button"
+          onClick={handleSend}
+          disabled={!inputValue.trim() || isTyping}
+        >
+          📤
+        </button>
+      </div>
+    </div>
+  );
 }
 
 // ============================================
@@ -456,7 +715,7 @@ function DragonRevealPage({ regenmonData, onStartGame }) {
 }
 
 // ============================================
-// VISTA 5: JUEGO PRINCIPAL (v4.0 - Sin estado local de guardado)
+// VISTA 5: JUEGO PRINCIPAL (v4.1 - Con Chat)
 // ============================================
 
 function GamePage({
@@ -757,12 +1016,32 @@ function GamePage({
         <p className="text-xs text-gray-500 mt-0.5 uppercase tracking-wider">{getMaturityLabel()}</p>
       </header>
 
-      {/* ÁREA PRINCIPAL: Dragón (izq) + Recursos (der) */}
+      {/* ÁREA PRINCIPAL: Recursos (izq) + Dragón (centro) + Chat (der) */}
       <div className="relative z-10 flex-1 px-4 pb-4">
-        <div className="max-w-2xl mx-auto flex gap-3 md:gap-4 flex-col md:flex-row">
+        <div className="max-w-4xl mx-auto flex gap-3 md:gap-4 flex-col md:flex-row items-start">
 
-          {/* Cuadro del Dragón (izquierda) */}
-          <div className="flex-1 bg-black/40 backdrop-blur-md border-2 rounded-2xl p-3 relative" style={{ boxShadow: `0 0 40px ${element?.glowColor}`, borderColor: `${element?.color}60` }}>
+          {/* Panel de Recursos (IZQUIERDA) */}
+          <div className="w-full md:w-[140px] bg-black/40 backdrop-blur-md border border-white/10 rounded-xl p-3 flex md:flex-col items-center justify-around md:justify-start gap-2 shrink-0">
+            <h3 className="hidden md:block text-[10px] font-medium text-gray-500 mb-2 uppercase tracking-wider text-center">Recursos</h3>
+
+            {/* Comida */}
+            <div className="flex md:flex-col items-center gap-2 md:gap-1">
+              <span className="text-3xl md:text-4xl">🍖</span>
+              <div className="flex md:flex-col items-center gap-1">
+                <span className="text-[10px] text-gray-500 hidden md:block">Comida</span>
+                <span className="text-xl md:text-2xl font-bold text-white">{resources.food}<span className="text-gray-500 text-sm">/{resources.maxFood}</span></span>
+              </div>
+            </div>
+
+            {/* Timer */}
+            <div className="flex md:flex-col items-center gap-1 md:border-t md:border-white/10 md:pt-2 md:mt-1 md:w-full">
+              <span className="text-[10px] text-gray-500">Próxima:</span>
+              <span className="text-sm md:text-base text-white/80 font-medium">{getTimeUntilNextFood()}</span>
+            </div>
+          </div>
+
+          {/* Cuadro del Dragón (CENTRO) */}
+          <div className="flex-1 bg-black/40 backdrop-blur-md border-2 rounded-2xl p-3 relative min-h-[280px]" style={{ boxShadow: `0 0 40px ${element?.glowColor}`, borderColor: `${element?.color}60` }}>
             {/* Header interno: XP | Reiniciar */}
             <div className="flex justify-between items-start mb-2">
               {/* XP Box */}
@@ -782,7 +1061,7 @@ function GamePage({
             {/* Imagen del dragón */}
             <div className="flex justify-center py-2">
               <div className="relative">
-                <img src={getDragonImagePath(regenmon.class, regenmon.dragonId, maturityState)} alt={regenmon.name} className={`w-32 h-32 md:w-44 md:h-44 object-contain drop-shadow-2xl animate-dragon-idle ${isLevelingUp ? 'animate-level-up' : ''} ${isEvolving ? 'animate-evolution' : ''}`} style={{ '--dragon-scale': calculateDragonScale(regenmon.level) / 100 }} draggable={false} />
+                <img src={getDragonImagePath(regenmon.class, regenmon.dragonId, maturityState)} alt={regenmon.name} className={`w-32 h-32 md:w-40 md:h-40 object-contain drop-shadow-2xl animate-dragon-idle ${isLevelingUp ? 'animate-level-up' : ''} ${isEvolving ? 'animate-evolution' : ''}`} style={{ '--dragon-scale': calculateDragonScale(regenmon.level) / 100 }} draggable={false} />
                 {isEvolving && <div className="absolute inset-0 flex items-center justify-center"><div className="absolute inset-0 bg-white/20 animate-ping rounded-full" /></div>}
               </div>
             </div>
@@ -794,25 +1073,16 @@ function GamePage({
             </div>
           </div>
 
-          {/* Panel de Recursos (derecha) */}
-          <div className="w-full md:w-36 bg-black/40 backdrop-blur-md border border-white/10 rounded-xl p-3 flex md:flex-col items-center justify-around md:justify-start gap-2">
-            <h3 className="hidden md:block text-[10px] font-medium text-gray-500 mb-2 uppercase tracking-wider text-center">Recursos</h3>
-
-            {/* Comida */}
-            <div className="flex md:flex-col items-center gap-2 md:gap-1">
-              <span className="text-2xl md:text-3xl">🍖</span>
-              <div className="flex md:flex-col items-center gap-1">
-                <span className="text-[10px] text-gray-500 hidden md:block">Comida</span>
-                <span className="text-lg md:text-xl font-bold text-white">{resources.food}<span className="text-gray-500 text-sm">/{resources.maxFood}</span></span>
-              </div>
-            </div>
-
-            {/* Timer */}
-            <div className="flex md:flex-col items-center gap-1 md:border-t md:border-white/10 md:pt-2 md:mt-1">
-              <span className="text-[10px] text-gray-500">Próxima:</span>
-              <span className="text-xs md:text-sm text-white/80 font-medium">{getTimeUntilNextFood()}</span>
-            </div>
-          </div>
+          {/* Panel de Chat (DERECHA) */}
+          <ChatPanel
+            regenmon={{
+              name: regenmon.name,
+              element: element?.name?.toLowerCase(),
+              maturityState: maturityState
+            }}
+            stats={stats}
+            onStatsChange={setStats}
+          />
         </div>
       </div>
 
