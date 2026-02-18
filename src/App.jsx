@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 
 // ============================================
-// CONFIGURACIÓN - VERSIÓN 4.1
+// CONFIGURACIÓN - VERSIÓN 4.2
 // ============================================
 
 const ELEMENTS = [
@@ -1021,7 +1021,7 @@ function GamePage({
         <div className="max-w-4xl mx-auto flex gap-3 md:gap-4 flex-col md:flex-row items-start">
 
           {/* Panel de Recursos (IZQUIERDA) */}
-          <div className="w-full md:w-[140px] bg-black/40 backdrop-blur-md border border-white/10 rounded-xl p-3 flex md:flex-col items-center justify-around md:justify-start gap-2 shrink-0">
+          <div className="resources-left-panel w-full md:w-[140px] bg-black/40 backdrop-blur-md border border-white/10 rounded-xl p-3 flex md:flex-col items-center justify-around md:justify-start gap-2 shrink-0">
             <h3 className="hidden md:block text-[10px] font-medium text-gray-500 mb-2 uppercase tracking-wider text-center">Recursos</h3>
 
             {/* Comida */}
@@ -1041,7 +1041,7 @@ function GamePage({
           </div>
 
           {/* Cuadro del Dragón (CENTRO) */}
-          <div className="flex-1 bg-black/40 backdrop-blur-md border-2 rounded-2xl p-3 relative min-h-[280px]" style={{ boxShadow: `0 0 40px ${element?.glowColor}`, borderColor: `${element?.color}60` }}>
+          <div className="dragon-display-box bg-black/40 backdrop-blur-md border-2 rounded-2xl p-3 relative" style={{ boxShadow: `0 0 40px ${element?.glowColor}`, borderColor: `${element?.color}60` }}>
             {/* Header interno: XP | Reiniciar */}
             <div className="flex justify-between items-start mb-2">
               {/* XP Box */}
@@ -1059,9 +1059,9 @@ function GamePage({
             </div>
 
             {/* Imagen del dragón */}
-            <div className="flex justify-center py-2">
+            <div className="dragon-image-container">
               <div className="relative">
-                <img src={getDragonImagePath(regenmon.class, regenmon.dragonId, maturityState)} alt={regenmon.name} className={`w-32 h-32 md:w-40 md:h-40 object-contain drop-shadow-2xl animate-dragon-idle ${isLevelingUp ? 'animate-level-up' : ''} ${isEvolving ? 'animate-evolution' : ''}`} style={{ '--dragon-scale': calculateDragonScale(regenmon.level) / 100 }} draggable={false} />
+                <img src={getDragonImagePath(regenmon.class, regenmon.dragonId, maturityState)} alt={regenmon.name} className={`dragon-image drop-shadow-2xl animate-dragon-idle ${isLevelingUp ? 'animate-level-up' : ''} ${isEvolving ? 'animate-evolution' : ''}`} style={{ '--dragon-scale': calculateDragonScale(regenmon.level) / 100 }} draggable={false} />
                 {isEvolving && <div className="absolute inset-0 flex items-center justify-center"><div className="absolute inset-0 bg-white/20 animate-ping rounded-full" /></div>}
               </div>
             </div>
