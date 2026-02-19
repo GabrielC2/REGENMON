@@ -1,7 +1,10 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
+import { useAuth } from './hooks/useAuth'
+import LoginModal from './components/LoginModal'
+import UserHeader from './components/UserHeader'
 
 // ============================================
-// CONFIGURACIÓN - VERSIÓN 4.3
+// CONFIGURACIÓN - VERSIÓN 4.9 (Persistencia de datos y Login)
 // ============================================
 
 const ELEMENTS = [
@@ -85,10 +88,10 @@ const ELEMENT_BONUSES = {
 const EXP_TABLE = { 1: 0, 2: 50, 3: 125, 4: 225, 5: 375, 6: 575, 7: 825, 8: 1125, 9: 1525, 10: 2025, 11: 2625, 12: 3325, 13: 4125, 14: 5025, 15: 6025 }
 
 const ACTIONS = {
-  feed: { key: 'feed', name: 'Alimentar', icon: '🍖', cooldown: TIMERS.feedCooldown, dailyLimit: 10, effects: ACTION_EFFECTS.feed, requirements: { food: 1 }, noDailyLimit: false },
-  train: { key: 'train', name: 'Entrenar', icon: '💪', cooldown: TIMERS.trainCooldown, dailyLimit: Infinity, effects: ACTION_EFFECTS.train, requirements: { energy: 25, hunger: 10 }, noDailyLimit: true },
+  feed: { key: 'feed', name: 'Alimentar', icon: '🍖', cooldown: TIMERS.feedCooldown, dailyLimit: Infinity, effects: ACTION_EFFECTS.feed, requirements: { food: 1 }, noDailyLimit: true },
+  train: { key: 'train', name: 'Entrenar', icon: '💪', cooldown: TIMERS.trainCooldown, dailyLimit: Infinity, effects: ACTION_EFFECTS.train, requirements: { energy: 20, hunger: 10 }, noDailyLimit: true },
   play: { key: 'play', name: 'Jugar', icon: '🎾', cooldown: TIMERS.playCooldown, dailyLimit: Infinity, effects: ACTION_EFFECTS.play, requirements: { energy: 15 }, noDailyLimit: true },
-  rest: { key: 'rest', name: 'Descansar', icon: '😴', cooldown: TIMERS.restCooldown, dailyLimit: Infinity, effects: ACTION_EFFECTS.rest, requirements: { happiness: 10 }, noDailyLimit: true },
+  rest: { key: 'rest', name: 'Descansar', icon: '😴', cooldown: TIMERS.restCooldown, dailyLimit: Infinity, effects: ACTION_EFFECTS.rest, requirements: { hunger: 5 }, noDailyLimit: true },
 }
 
 const MOOD_CONFIG = {
@@ -170,13 +173,32 @@ const MAX_MESSAGES = 20;
 // ============================================
 
 function Particles({ colors }) {
-  const particles = Array.from({ length: 20 }, (_, i) => ({
-    id: i, left: Math.random() * 100, delay: Math.random() * 10, duration: 10 + Math.random() * 20, color: colors[Math.floor(Math.random() * colors.length)]
+  // Partículas MUCHO más lentas: duración de 30-50 segundos
+  const particles = Array.from({ length: 15 }, (_, i) => ({
+    id: i,
+    left: Math.random() * 100,
+    delay: Math.random() * 20,
+    duration: 30 + Math.random() * 20, // 30-50 segundos (MÁS LENTO)
+    size: 3 + Math.random() * 4,
+    color: colors[Math.floor(Math.random() * colors.length)]
   }))
   return (
     <div className="fixed inset-0 pointer-events-none overflow-hidden z-0">
       {particles.map(p => (
-        <div key={p.id} className="particle" style={{ left: `${p.left}%`, bottom: '-10px', backgroundColor: p.color, animationDelay: `${p.delay}s`, animationDuration: `${p.duration}s` }} />
+        <div
+          key={p.id}
+          className="particle"
+          style={{
+            left: `${p.left}%`,
+            bottom: '-10px',
+            width: `${p.size}px`,
+            height: `${p.size}px`,
+            backgroundColor: p.color,
+            boxShadow: `0 0 ${p.size * 2}px ${p.color}`,
+            animationDelay: `${p.delay}s`,
+            animationDuration: `${p.duration}s`
+          }}
+        />
       ))}
     </div>
   )
@@ -213,10 +235,10 @@ function StageFlash({ active, color }) {
 }
 
 // ============================================
-// PANEL DE CHAT (v4.3) - COLAPSABLE EN MÓVIL
+// PANEL DE CHAT (v4.4) - CON STORAGE POR USUARIO
 // ============================================
 
-function ChatPanel({ regenmon, stats, onStatsChange }) {
+function ChatPanel({ regenmon, stats, onStatsChange, storagePrefix = '' }) {
   const [messages, setMessages] = useState([]);
   const [inputValue, setInputValue] = useState('');
   const [isTyping, setIsTyping] = useState(false);
@@ -225,6 +247,10 @@ function ChatPanel({ regenmon, stats, onStatsChange }) {
   const [isMobile, setIsMobile] = useState(false);
   const messagesEndRef = useRef(null);
   const inputRef = useRef(null);
+
+  // Claves de storage con prefijo de usuario
+  const chatKey = storagePrefix ? `${storagePrefix}_${CHAT_STORAGE_KEY}` : CHAT_STORAGE_KEY;
+  const memoriesKey = storagePrefix ? `${storagePrefix}_${MEMORIES_KEY}` : MEMORIES_KEY;
 
   // Detectar si es móvil
   useEffect(() => {
@@ -240,8 +266,8 @@ function ChatPanel({ regenmon, stats, onStatsChange }) {
 
   // Cargar mensajes y memorias de localStorage
   useEffect(() => {
-    const savedMessages = localStorage.getItem(CHAT_STORAGE_KEY);
-    const savedMemories = localStorage.getItem(MEMORIES_KEY);
+    const savedMessages = localStorage.getItem(chatKey);
+    const savedMemories = localStorage.getItem(memoriesKey);
 
     if (savedMessages) {
       setMessages(JSON.parse(savedMessages));
@@ -249,22 +275,22 @@ function ChatPanel({ regenmon, stats, onStatsChange }) {
     if (savedMemories) {
       setMemories(JSON.parse(savedMemories));
     }
-  }, []);
+  }, [chatKey, memoriesKey]);
 
   // Guardar mensajes en localStorage
   useEffect(() => {
     if (messages.length > 0) {
       const messagesToSave = messages.slice(-MAX_MESSAGES);
-      localStorage.setItem(CHAT_STORAGE_KEY, JSON.stringify(messagesToSave));
+      localStorage.setItem(chatKey, JSON.stringify(messagesToSave));
     }
-  }, [messages]);
+  }, [messages, chatKey]);
 
   // Guardar memorias en localStorage
   useEffect(() => {
     if (memories.length > 0) {
-      localStorage.setItem(MEMORIES_KEY, JSON.stringify(memories));
+      localStorage.setItem(memoriesKey, JSON.stringify(memories));
     }
-  }, [memories]);
+  }, [memories, memoriesKey]);
 
   // Scroll automático al último mensaje
   useEffect(() => {
@@ -555,10 +581,14 @@ function ElementCarousel({ onSelect }) {
 }
 
 // ============================================
-// VISTA 1: LANDING PAGE (v3.8)
+// VISTA 1: LANDING PAGE (v4.4 - Con Login)
 // ============================================
 
-function LandingPage({ onPlayClick }) {
+// ============================================
+// VISTA 1: LANDING PAGE (v4.6 - Sin estado de conexión)
+// ============================================
+
+function LandingPage({ onShowLogin }) {
   return (
     <div className="min-h-screen bg-dark-bg">
       {/* HERO SECTION con imagen de fondo */}
@@ -573,7 +603,7 @@ function LandingPage({ onPlayClick }) {
           <h1 className="text-5xl md:text-7xl lg:text-8xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-accent via-purple-400 to-pink-500 mb-4 animate-float">REGENMON</h1>
           <p className="text-xl md:text-2xl text-gray-200 mb-4 font-medium">Cuida. Entrena. Evoluciona.</p>
           <p className="text-base md:text-lg text-gray-300 max-w-2xl mx-auto mb-8 px-4">Adopta tu criatura elemental, cuídala diariamente y observa cómo evoluciona de una pequeña cría a un poderoso ser ancestral.</p>
-          <button onClick={onPlayClick} className="bg-gradient-to-r from-accent to-purple-600 text-white font-bold text-lg md:text-xl px-10 md:px-12 py-4 md:py-5 rounded-full transition-all duration-300 hover:scale-110 animate-pulse-glow shadow-lg shadow-accent/30">🎮 JUGAR</button>
+          <button onClick={onShowLogin} className="bg-gradient-to-r from-accent to-purple-600 text-white font-bold text-lg md:text-xl px-10 md:px-12 py-4 md:py-5 rounded-full transition-all duration-300 hover:scale-110 animate-pulse-glow shadow-lg shadow-accent/30">🎮 JUGAR</button>
         </div>
       </section>
 
@@ -652,14 +682,83 @@ function LandingPage({ onPlayClick }) {
 }
 
 // ============================================
-// VISTA 2: REGISTRO
+// VISTA 2: REGISTRO (v4.7 - Con verificación de nombres)
 // ============================================
 
 function RegisterPage({ onBack, onCreate }) {
   const [name, setName] = useState('')
+  const [nameError, setNameError] = useState('')
+  const [isChecking, setIsChecking] = useState(false)
   const nameLength = name.length
-  const isNameValid = nameLength >= 3 && nameLength <= 15 && /^[a-zA-Z0-9]+$/.test(name)
-  const nameError = name.length > 0 && ((nameLength < 3 && 'Mínimo 3 caracteres') || (nameLength > 15 && 'Máximo 15 caracteres') || (!/^[a-zA-Z0-9]+$/.test(name) && 'Solo letras y números'))
+  const isNameValid = nameLength >= 3 && nameLength <= 15 && /^[a-zA-Z0-9]+$/.test(name) && !nameError
+
+  // Verificar nombre duplicado
+  const checkNameExists = (nameToCheck) => {
+    const keys = Object.keys(localStorage)
+
+    for (const key of keys) {
+      if (key.includes('regenmon_save')) {
+        try {
+          const data = JSON.parse(localStorage.getItem(key))
+          if (data?.regenmon?.name?.toLowerCase() === nameToCheck.toLowerCase()) {
+            return true
+          }
+        } catch (e) {
+          continue
+        }
+      }
+    }
+    return false
+  }
+
+  // Validar nombre cuando cambia
+  useEffect(() => {
+    if (name.length === 0) {
+      setNameError('')
+      return
+    }
+
+    if (name.length < 3) {
+      setNameError('Mínimo 3 caracteres')
+      return
+    }
+
+    if (name.length > 15) {
+      setNameError('Máximo 15 caracteres')
+      return
+    }
+
+    if (!/^[a-zA-Z0-9]+$/.test(name)) {
+      setNameError('Solo letras y números')
+      return
+    }
+
+    // Verificar nombre duplicado
+    if (checkNameExists(name)) {
+      setNameError('Este nombre ya está en uso')
+      return
+    }
+
+    setNameError('')
+  }, [name])
+
+  // Manejar selección de elemento
+  const handleElementSelect = (elementId) => {
+    if (!isNameValid || isChecking) return
+
+    setIsChecking(true)
+
+    // Verificar nombre una vez más antes de crear
+    if (checkNameExists(name)) {
+      setNameError('Este nombre ya está en uso')
+      setIsChecking(false)
+      return
+    }
+
+    // Crear el regenmon
+    onCreate(name, elementId)
+    setIsChecking(false)
+  }
 
   return (
     <div className="min-h-screen bg-dark-bg py-8 px-4">
@@ -670,13 +769,21 @@ function RegisterPage({ onBack, onCreate }) {
         <div className="mb-10">
           <label className="block text-white font-medium mb-2">Nombre de tu Regenmon</label>
           <div className="relative">
-            <input type="text" value={name} onChange={(e) => setName(e.target.value)} placeholder="Ej: Sparky, Rocky, Aqua..." maxLength={15} className={`w-full bg-dark-secondary/80 backdrop-blur-sm border-2 rounded-xl px-4 py-3 text-white placeholder-gray-500 focus:outline-none focus:ring-2 transition-all ${nameError ? 'border-red-500' : isNameValid ? 'border-green-500' : 'border-gray-700 focus:border-accent'}`} />
+            <input
+              type="text"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="Ej: Sparky, Rocky, Aqua..."
+              maxLength={15}
+              disabled={isChecking}
+              className={`w-full bg-dark-secondary/80 backdrop-blur-sm border-2 rounded-xl px-4 py-3 text-white placeholder-gray-500 focus:outline-none focus:ring-2 transition-all ${nameError ? 'border-red-500' : isNameValid ? 'border-green-500' : 'border-gray-700 focus:border-accent'}`}
+            />
             <span className={`absolute right-4 top-1/2 -translate-y-1/2 text-sm ${nameLength > 15 ? 'text-red-500' : 'text-gray-500'}`}>{nameLength}/15</span>
           </div>
           {nameError && <p className="text-red-500 text-sm mt-1">{nameError}</p>}
-          {isNameValid && <p className="text-green-500 text-sm mt-1">✓ Nombre válido</p>}
+          {isNameValid && <p className="text-green-500 text-sm mt-1">✓ Nombre disponible</p>}
         </div>
-        <div className="mb-6"><label className="block text-white font-medium mb-4 text-center">Elige tu elemento</label><ElementCarousel onSelect={(id) => isNameValid && onCreate(name, id)} /></div>
+        <div className="mb-6"><label className="block text-white font-medium mb-4 text-center">Elige tu elemento</label><ElementCarousel onSelect={handleElementSelect} /></div>
         {!isNameValid && <p className="text-center text-gray-500 text-sm mt-4">Ingresa un nombre válido para seleccionar tu elemento</p>}
       </div>
     </div>
@@ -785,7 +892,11 @@ function GamePage({
   setCooldowns,
   dailyUses,
   setDailyUses,
-  onReset
+  onReset,
+  onLogout,
+  userData,
+  isGuest,
+  storagePrefix = ''
 }) {
   const element = ELEMENTS.find(e => e.id === regenmonData.class)
   const folder = ELEMENT_TO_FOLDER[regenmonData.class]
@@ -911,21 +1022,64 @@ function GamePage({
   }
 
   const executeAction = (actionKey) => {
+    console.log(`🎮 executeAction llamado: ${actionKey}`)
+
     const action = ACTIONS[actionKey]
-    if (!action || (moodConfig.blockActions && actionKey !== 'feed' && actionKey !== 'rest') || cooldowns[actionKey] > 0) return
-    if (!action.noDailyLimit && dailyUses[actionKey] >= action.dailyLimit) return
+    if (!action) {
+      console.log(`❌ Acción no encontrada: ${actionKey}`)
+      return
+    }
+
+    // Verificar mood blocking
+    if (moodConfig.blockActions && actionKey !== 'feed' && actionKey !== 'rest') {
+      console.log(`❌ Acción bloqueada por mood: ${mood}`)
+      return
+    }
+
+    // Verificar cooldown
+    if (cooldowns[actionKey] > 0) {
+      console.log(`❌ En cooldown: ${cooldowns[actionKey]}ms`)
+      return
+    }
 
     // Verificar requisitos específicos
     if (actionKey === 'feed') {
-      if (resources.food < 1 || stats.hunger >= 100) return
+      if (resources.food < 1) {
+        console.log(`❌ Sin comida`)
+        return
+      }
+      if (stats.hunger >= 100) {
+        console.log(`❌ Ya está lleno`)
+        return
+      }
     } else if (actionKey === 'train') {
-      if (stats.energy < 20 || stats.hunger < 10) return
+      if (stats.energy < 20) {
+        console.log(`❌ Sin energía: ${stats.energy}`)
+        return
+      }
+      if (stats.hunger < 10) {
+        console.log(`❌ Hambriento: ${stats.hunger}`)
+        return
+      }
     } else if (actionKey === 'play') {
-      if (stats.energy < 15) return
+      if (stats.energy < 15) {
+        console.log(`❌ Sin energía: ${stats.energy}`)
+        return
+      }
     } else if (actionKey === 'rest') {
-      if (stats.hunger < 5 || stats.energy >= 100) return
+      if (stats.hunger < 5) {
+        console.log(`❌ Hambriento: ${stats.hunger}`)
+        return
+      }
+      if (stats.energy >= 100) {
+        console.log(`❌ Ya está descansado`)
+        return
+      }
     }
 
+    console.log(`✅ Ejecutando acción: ${actionKey}`)
+
+    // Animación
     setActionAnimations(prev => ({ ...prev, [actionKey]: true }))
     setTimeout(() => setActionAnimations(prev => ({ ...prev, [actionKey]: false })), 200)
 
@@ -936,6 +1090,7 @@ function GamePage({
       if (effects.hunger !== undefined) newStats.hunger = Math.max(0, Math.min(100, newStats.hunger + effects.hunger))
       if (effects.energy !== undefined) newStats.energy = Math.max(0, Math.min(100, newStats.energy + effects.energy))
       if (effects.happiness !== undefined) newStats.happiness = Math.max(0, Math.min(100, newStats.happiness + effects.happiness))
+      console.log(`📊 Stats actualizados:`, newStats)
       return newStats
     })
 
@@ -953,16 +1108,11 @@ function GamePage({
       [actionKey]: action.cooldown
     }))
 
-    // Actualizar usos diarios
-    if (!action.noDailyLimit) {
-      setDailyUses(prev => ({
-        ...prev,
-        [actionKey]: prev[actionKey] + 1
-      }))
-    }
-
     // Dar EXP
-    if (action.effects.exp) addExperience(action.effects.exp)
+    if (action.effects.exp) {
+      console.log(`⭐ Ganando ${action.effects.exp} EXP`)
+      addExperience(action.effects.exp)
+    }
   }
 
   const currentLevelExp = EXP_TABLE[regenmon.level] || 0
@@ -1042,9 +1192,25 @@ function GamePage({
     const canExecute = !status.disabled
     const dailyLimit = action.noDailyLimit ? '∞' : `${dailyUses[actionKey]}/${action.dailyLimit}`
 
+    // Handler con console.log para debug
+    const handleClick = () => {
+      console.log(`🔘 Botón ${actionKey} clickeado`)
+      console.log(`   canExecute: ${canExecute}`)
+      console.log(`   status:`, status)
+
+      if (canExecute) {
+        executeAction(actionKey)
+      }
+    }
+
     return (
       <div className="flex flex-col items-center">
-        <button onClick={() => canExecute && executeAction(actionKey)} disabled={!canExecute} className={`w-full rounded-lg flex flex-col items-center justify-center py-2 px-1 transition-all duration-200 ${actionAnimations[actionKey] ? 'animate-action-pulse' : ''} ${status.state === 'ready' ? 'bg-gradient-to-br from-purple-500/30 to-purple-500/10 border border-purple-500/50 action-ready cursor-pointer hover:scale-105' : 'bg-dark-secondary/50 border border-gray-700 cursor-not-allowed opacity-50'}`}>
+        <button
+          type="button"
+          onClick={handleClick}
+          disabled={!canExecute}
+          className={`w-full rounded-lg flex flex-col items-center justify-center py-2 px-1 transition-all duration-200 ${actionAnimations[actionKey] ? 'animate-action-pulse' : ''} ${status.state === 'ready' ? 'bg-gradient-to-br from-purple-500/30 to-purple-500/10 border border-purple-500/50 action-ready cursor-pointer hover:scale-105' : 'bg-dark-secondary/50 border border-gray-700 cursor-not-allowed opacity-50'}`}
+        >
           <span className="text-xl md:text-2xl">{action.icon}</span>
           <span className="text-[9px] md:text-[10px] font-medium text-white">{action.name}</span>
           <span className={`text-[8px] md:text-[10px] ${status.state === 'ready' ? 'text-green-400' : 'text-gray-500'}`}>{status.text}</span>
@@ -1065,8 +1231,22 @@ function GamePage({
     <div className="min-h-screen relative flex flex-col" style={{ background: ELEMENT_BACKGROUNDS[folder] }}>
       <Particles colors={element?.particles || ELEMENT_PARTICLES['FUEGO']} />
 
+      {/* HEADER DE USUARIO CON LOGOUT */}
+      <UserHeader
+        userData={userData}
+        isGuest={isGuest}
+        onLogout={onLogout}
+      />
+
+      {/* Banner de advertencia para invitados */}
+      {isGuest && (
+        <div className="guest-warning-banner">
+          ⚠️ Modo Invitado - Tu progreso no se guardará al cerrar
+        </div>
+      )}
+
       {/* HEADER: Nombre, Tipo y Estado (centrado, fuera del cuadro) */}
-      <header className="text-center pt-4 pb-2 relative z-10">
+      <header className="text-center pt-2 pb-2 relative z-10">
         <h1 className="text-2xl md:text-3xl font-bold text-white">{regenmon.name}</h1>
         <p className="text-sm md:text-base text-gray-400 mt-1">{element?.emoji} Dragón de {element?.name?.toLowerCase().charAt(0).toUpperCase() + element?.name?.toLowerCase().slice(1)}</p>
         <p className="text-xs text-gray-500 mt-0.5 uppercase tracking-wider">{getMaturityLabel()}</p>
@@ -1138,6 +1318,7 @@ function GamePage({
             }}
             stats={stats}
             onStatsChange={setStats}
+            storagePrefix={storagePrefix}
           />
         </div>
       </div>
@@ -1186,25 +1367,29 @@ function GamePage({
 }
 
 // ============================================
-// APP PRINCIPAL - CON SISTEMA DE GUARDADO v4.0
+// APP PRINCIPAL - CON SISTEMA DE GUARDADO v4.6
 // ============================================
 
 function App() {
-  const [currentView, setCurrentView] = useState('landing')
+  // Hook de autenticación
+  const { user, isGuest, isLoading: authLoading, isAuthenticated, saveUserData, loadUserData, logout: authLogout, getUserStorageKey, hasSavedGame } = useAuth();
+
+  const [currentView, setCurrentView] = useState('loading')
   const [regenmon, setRegenmon] = useState(null)
   const [stats, setStats] = useState({ hunger: 100, energy: 100, happiness: 100 })
   const [resources, setResources] = useState({ food: 10, maxFood: 50, lastFoodGenTime: Date.now(), lastHungerDecay: Date.now() })
   const [cooldowns, setCooldowns] = useState({ feed: 0, train: 0, play: 0, rest: 0 })
   const [dailyUses, setDailyUses] = useState({ feed: 0, train: 0, play: 0, lastReset: new Date().toDateString() })
   const [meta, setMeta] = useState({ lastSaved: 0, createdAt: 0 })
-  const [isLoading, setIsLoading] = useState(true)
+  const [showLoginModal, setShowLoginModal] = useState(false)
+  const [userData, setUserData] = useState(null)
 
   // ============================================
-  // FUNCIONES DE GUARDADO
+  // FUNCIONES DE GUARDADO - BASADO EN USUARIO
   // ============================================
 
-  const saveGame = () => {
-    if (!regenmon) return
+  const saveGame = useCallback(() => {
+    if (!regenmon || !isAuthenticated || !user) return
 
     try {
       const saveData = {
@@ -1223,35 +1408,46 @@ function App() {
         },
       }
 
-      localStorage.setItem(SAVE_KEY, JSON.stringify(saveData))
-      console.log('💾 Partida guardada:', new Date().toLocaleTimeString())
+      // Usar la función del hook que construye la key correcta
+      saveUserData(SAVE_KEY, saveData)
+      console.log('💾 Partida guardada')
+
     } catch (error) {
       console.error('Error al guardar:', error)
     }
-  }
+  }, [regenmon, stats, resources, cooldowns, dailyUses, meta, currentView, isAuthenticated, user, saveUserData])
 
-  const loadGame = () => {
+  const loadGame = useCallback(() => {
+    if (!isAuthenticated) return null
+
     try {
-      const savedData = localStorage.getItem(SAVE_KEY)
+      const savedData = loadUserData(SAVE_KEY)
 
       if (!savedData) {
         console.log('🆕 No hay partida guardada, iniciando nuevo juego')
         return null
       }
 
-      const data = JSON.parse(savedData)
+      const data = savedData
       console.log('📂 Partida cargada:', data)
       return data
     } catch (error) {
       console.error('Error al cargar:', error)
       return null
     }
-  }
+  }, [isAuthenticated, loadUserData])
 
-  const deleteSave = () => {
-    localStorage.removeItem(SAVE_KEY)
-    console.log('🗑️ Partida borrada')
-  }
+  const deleteSave = useCallback(() => {
+    if (!isAuthenticated) return
+
+    // Construir key correcta según el tipo de usuario
+    const saveKey = isGuest
+      ? SAVE_KEY
+      : `regenmon_user_${user?.id}_${SAVE_KEY}`
+
+    localStorage.removeItem(saveKey)
+    console.log('🗑️ Partida borrada:', saveKey)
+  }, [isAuthenticated, user?.id, isGuest])
 
   // ============================================
   // APLICAR DEGRADACIÓN PASIVA
@@ -1305,42 +1501,85 @@ function App() {
   }
 
   // ============================================
-  // CARGAR PARTIDA AL INICIAR
+  // VERIFICAR SESIÓN AL CARGAR - v4.9
   // ============================================
 
   useEffect(() => {
-    const savedData = loadGame()
+    // Esperar a que termine la carga de autenticación
+    if (authLoading) return
 
-    if (savedData && savedData.gameState?.hasRegenmon) {
-      // Restaurar estado desde localStorage
-      setRegenmon(savedData.regenmon)
-      setStats(savedData.stats)
-      setResources(savedData.resources)
-      setCooldowns(savedData.cooldowns || { feed: 0, train: 0, play: 0, rest: 0 })
-      setDailyUses(savedData.dailyUses)
-      setMeta(savedData.meta)
+    const checkSession = async () => {
+      console.log('🔍 Verificando sesión...')
+      console.log('   isAuthenticated:', isAuthenticated)
+      console.log('   user:', user)
+      console.log('   isGuest:', isGuest)
 
-      // Verificar si cambió el día para resetear dailyUses
-      const today = new Date().toDateString()
-      if (savedData.dailyUses.lastReset !== today) {
-        setDailyUses({ feed: 0, train: 0, play: 0, lastReset: today })
+      if (isAuthenticated && user) {
+        // Guardar datos del usuario
+        setUserData({
+          walletAddress: user.walletAddress || user.id,
+          email: user.email,
+          isGuest: isGuest,
+        })
+
+        // Construir la key de guardado correcta
+        const userSaveKey = isGuest
+          ? SAVE_KEY
+          : `regenmon_user_${user.id}_${SAVE_KEY}`
+
+        console.log('🔍 Buscando partida en:', userSaveKey)
+
+        const savedDataStr = localStorage.getItem(userSaveKey)
+
+        if (savedDataStr) {
+          try {
+            const savedData = JSON.parse(savedDataStr)
+
+            if (savedData.gameState?.hasRegenmon) {
+              console.log('✅ Restaurando partida guardada')
+
+              // Restaurar estado
+              setRegenmon(savedData.regenmon)
+              setStats(savedData.stats)
+              setResources(savedData.resources)
+              setCooldowns(savedData.cooldowns || { feed: 0, train: 0, play: 0, rest: 0 })
+              setDailyUses(savedData.dailyUses)
+              setMeta(savedData.meta)
+
+              // Verificar reset diario
+              const today = new Date().toDateString()
+              if (savedData.dailyUses?.lastReset !== today) {
+                setDailyUses({ feed: 0, train: 0, play: 0, lastReset: today })
+              }
+
+              // Aplicar degradación pasiva
+              if (savedData.meta?.lastSaved) {
+                applyPassiveDecay(savedData.meta.lastSaved)
+              }
+
+              // Ir directo al juego
+              setCurrentView('game')
+              console.log('✅ Partida restaurada, yendo al juego')
+              return
+            }
+          } catch (e) {
+            console.error('Error al parsear partida:', e)
+          }
+        }
+
+        // Usuario autenticado pero sin partida
+        console.log('📝 Usuario sin partida, yendo a registro')
+        setCurrentView('register')
+
+      } else {
+        // No hay sesión, mostrar landing
+        console.log('❌ Sin sesión, mostrando landing')
+        setCurrentView('landing')
       }
-
-      // Calcular degradación pasiva desde último guardado
-      if (savedData.meta?.lastSaved) {
-        applyPassiveDecay(savedData.meta.lastSaved)
-      }
-
-      // Ir directo al juego
-      setCurrentView('game')
-      console.log('✅ Partida restaurada')
-    } else {
-      // No hay partida, mostrar landing
-      setCurrentView('landing')
     }
 
-    setIsLoading(false)
-  }, [])
+    checkSession()
+  }, [authLoading, isAuthenticated, user, isGuest])
 
   // ============================================
   // GUARDAR AUTOMÁTICAMENTE
@@ -1348,45 +1587,71 @@ function App() {
 
   // Guardar cuando cambian los datos importantes
   useEffect(() => {
-    if (regenmon && currentView === 'game') {
+    if (regenmon && currentView === 'game' && isAuthenticated) {
       saveGame()
     }
-  }, [regenmon, stats, resources, dailyUses])
+  }, [regenmon, stats, resources, dailyUses, currentView, isAuthenticated, saveGame])
 
   // Guardar cada 30 segundos como backup
   useEffect(() => {
-    if (currentView !== 'game' || !regenmon) return
+    if (currentView !== 'game' || !regenmon || !isAuthenticated) return
 
     const autoSaveInterval = setInterval(() => {
       saveGame()
     }, 30000) // 30 segundos
 
     return () => clearInterval(autoSaveInterval)
-  }, [currentView, regenmon, stats, resources])
+  }, [currentView, regenmon, isAuthenticated, saveGame])
 
   // Guardar al cerrar/recargar la página
   useEffect(() => {
     const handleBeforeUnload = () => {
-      if (regenmon) {
+      if (regenmon && isAuthenticated) {
         saveGame()
       }
     }
 
     window.addEventListener('beforeunload', handleBeforeUnload)
     return () => window.removeEventListener('beforeunload', handleBeforeUnload)
-  }, [regenmon, stats, resources])
+  }, [regenmon, stats, resources, isAuthenticated, saveGame])
 
   // ============================================
-  // CREAR NUEVO REGENMON
+  // CREAR NUEVO REGENMON - Con guardado inmediato
   // ============================================
 
   const handleCreateRegenmon = (name, elementId) => {
-    setRegenmon({ name, class: elementId, dragonId: null, level: 1, exp: 0, maturityState: 1 })
-    setStats({ hunger: 100, energy: 100, happiness: 100 })
-    setResources({ food: 10, maxFood: 50, lastFoodGenTime: Date.now(), lastHungerDecay: Date.now() })
-    setCooldowns({ feed: 0, train: 0, play: 0, rest: 0 })
-    setDailyUses({ feed: 0, train: 0, play: 0, lastReset: new Date().toDateString() })
-    setMeta({ lastSaved: Date.now(), createdAt: Date.now() })
+    const newRegenmon = { name, class: elementId, dragonId: null, level: 1, exp: 0, maturityState: 1 }
+    const newStats = { hunger: 100, energy: 100, happiness: 100 }
+    const newResources = { food: 10, maxFood: 50, lastFoodGenTime: Date.now(), lastHungerDecay: Date.now() }
+    const newCooldowns = { feed: 0, train: 0, play: 0, rest: 0 }
+    const newDailyUses = { feed: 0, train: 0, play: 0, lastReset: new Date().toDateString() }
+    const newMeta = { lastSaved: Date.now(), createdAt: Date.now() }
+
+    // Actualizar estados
+    setRegenmon(newRegenmon)
+    setStats(newStats)
+    setResources(newResources)
+    setCooldowns(newCooldowns)
+    setDailyUses(newDailyUses)
+    setMeta(newMeta)
+
+    // GUARDAR INMEDIATAMENTE en localStorage
+    const saveData = {
+      regenmon: newRegenmon,
+      stats: newStats,
+      resources: newResources,
+      cooldowns: newCooldowns,
+      dailyUses: newDailyUses,
+      meta: newMeta,
+      gameState: {
+        currentView: 'hatching',
+        hasRegenmon: true,
+      },
+    }
+
+    saveUserData(SAVE_KEY, saveData)
+    console.log('💾 Registro guardado inmediatamente:', saveData)
+
     setCurrentView('hatching')
   }
 
@@ -1411,10 +1676,46 @@ function App() {
   }
 
   // ============================================
+  // LOGOUT COMPLETO - CORREGIDO (v4.8)
+  // ============================================
+
+  const handleLogout = async () => {
+    console.log('🚪 handleLogout iniciado')
+
+    try {
+      // 1. Llamar al logout del hook de autenticación
+      const result = await authLogout()
+      console.log('Resultado de authLogout:', result)
+
+      // 2. Resetear todos los estados del juego
+      setRegenmon(null)
+      setStats({ hunger: 100, energy: 100, happiness: 100 })
+      setResources({ food: 10, maxFood: 50, lastFoodGenTime: Date.now(), lastHungerDecay: Date.now() })
+      setCooldowns({ feed: 0, train: 0, play: 0, rest: 0 })
+      setDailyUses({ feed: 0, train: 0, play: 0, lastReset: new Date().toDateString() })
+      setMeta({ lastSaved: 0, createdAt: 0 })
+      setUserData(null)
+
+      // 3. Ir a la landing page
+      setCurrentView('landing')
+
+      console.log('✅ Logout completado - vista: landing')
+
+    } catch (error) {
+      console.error('Error en handleLogout:', error)
+
+      // Forzar ir a landing aunque haya error
+      setCurrentView('landing')
+      setRegenmon(null)
+      setUserData(null)
+    }
+  }
+
+  // ============================================
   // PANTALLA DE CARGA
   // ============================================
 
-  if (isLoading) {
+  if (currentView === 'loading' || authLoading) {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center bg-[#0a0a0f]">
         <div className="w-12 h-12 border-4 border-white/10 border-t-[#8b5cf6] rounded-full animate-spin mb-4"></div>
@@ -1430,7 +1731,9 @@ function App() {
   return (
     <div className="font-sans">
       {currentView === 'landing' && (
-        <LandingPage onPlayClick={() => setCurrentView('register')} />
+        <LandingPage
+          onShowLogin={() => setShowLoginModal(true)}
+        />
       )}
 
       {currentView === 'register' && (
@@ -1470,8 +1773,84 @@ function App() {
           dailyUses={dailyUses}
           setDailyUses={setDailyUses}
           onReset={handleReset}
+          onLogout={handleLogout}
+          userData={userData}
+          isGuest={isGuest}
+          storagePrefix={user?.id ? `regenmon_user_${user.id}` : ''}
         />
       )}
+
+      {/* Modal de Login - Visible en cualquier vista */}
+      <LoginModal
+        isOpen={showLoginModal}
+        onClose={() => setShowLoginModal(false)}
+        onSuccess={(method, walletAddress) => {
+          console.log('🎉 Login exitoso:', method, walletAddress);
+          setShowLoginModal(false);
+
+          if (method === 'guest') {
+            // Invitado: guardar sesión y ir a registro
+            const guestData = {
+              isGuest: true,
+              sessionId: `guest_${Date.now()}`,
+              createdAt: Date.now(),
+            };
+            localStorage.setItem('regenmon_auth', JSON.stringify(guestData));
+
+            setUserData({ isGuest: true });
+            setCurrentView('register');
+
+          } else {
+            // Usuario autenticado: guardar sesión
+            const authData = {
+              walletAddress: walletAddress,
+              isGuest: false,
+              lastLogin: Date.now(),
+            };
+            localStorage.setItem('regenmon_auth', JSON.stringify(authData));
+
+            setUserData({
+              walletAddress: walletAddress,
+              isGuest: false,
+            });
+
+            // IMPORTANTE: Verificar si tiene partida guardada con su wallet address
+            const userSaveKey = `regenmon_user_${walletAddress}_${SAVE_KEY}`;
+            const savedGame = localStorage.getItem(userSaveKey);
+
+            console.log('🔍 Buscando partida en:', userSaveKey);
+            console.log('   Encontrado:', !!savedGame);
+
+            if (savedGame) {
+              try {
+                const data = JSON.parse(savedGame);
+
+                if (data.gameState?.hasRegenmon) {
+                  console.log('✅ Restaurando partida guardada');
+
+                  // Restaurar todos los datos
+                  setRegenmon(data.regenmon);
+                  setStats(data.stats);
+                  setResources(data.resources);
+                  setCooldowns(data.cooldowns || { feed: 0, train: 0, play: 0, rest: 0 });
+                  setDailyUses(data.dailyUses);
+                  setMeta(data.meta);
+
+                  // Ir directo al juego
+                  setCurrentView('game');
+                  return;
+                }
+              } catch (e) {
+                console.error('Error al parsear partida:', e);
+              }
+            }
+
+            // No tiene partida, ir a registro
+            console.log('📝 Usuario nuevo, ir a registro');
+            setCurrentView('register');
+          }
+        }}
+      />
     </div>
   )
 }
