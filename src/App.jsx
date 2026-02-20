@@ -322,7 +322,7 @@ function WelcomeGiftModal({ isOpen, onClaim }) {
 
             <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-xl p-4 mb-6">
               <div className="flex items-center justify-center gap-3">
-                <span className="text-3xl">💰</span>
+                <img src="/assets/Moneda/Coin.png" alt="DC" style={{ width: '32px', height: '32px', objectFit: 'contain' }} />
                 <span className="text-2xl font-bold text-yellow-400">100 Dragoncoins</span>
               </div>
             </div>
@@ -337,7 +337,7 @@ function WelcomeGiftModal({ isOpen, onClaim }) {
         ) : (
           <>
             <div className="py-8">
-              <div className="text-6xl mb-4 animate-pulse">💰</div>
+              <div className="mb-4 flex justify-center"><img src="/assets/Moneda/Coin.png" alt="DC" style={{ width: '64px', height: '64px', objectFit: 'contain' }} className="animate-pulse" /></div>
               <h2 className="text-2xl font-bold text-yellow-400 mb-2">¡Felicidades!</h2>
               <p className="text-xl text-white">Acabas de obtener</p>
               <p className="text-4xl font-bold text-yellow-400 mt-2">100 Dragoncoins</p>
@@ -353,7 +353,7 @@ function WelcomeGiftModal({ isOpen, onClaim }) {
                       animationDuration: `${1 + Math.random() * 0.5}s`,
                     }}
                   >
-                    💰
+                    <img src="/assets/Moneda/Coin.png" alt="DC" style={{ width: '24px', height: '24px', objectFit: 'contain' }} />
                   </div>
                 ))}
               </div>
@@ -475,7 +475,8 @@ function HatchedDragonModal({
 
   const getAvailableHabitats = () => {
     return habitats.filter(h => {
-      const isCompatible = h.element === element || h.element === null || h.dragons.length === 0;
+      // Solo habitats del mismo elemento, o habitats sin elemento asignado aún
+      const isCompatible = h.element === element || h.element === null;
       const hasSpace = h.dragons.length < h.maxDragons;
       return isCompatible && hasSpace;
     });
@@ -542,7 +543,7 @@ function HatchedDragonModal({
                 onClick={handleSell}
                 className="flex-1 py-4 px-4 bg-red-500/20 border border-red-500/50 rounded-xl text-red-400 font-medium hover:bg-red-500/30 transition-all text-lg"
               >
-                💰 Vender
+                <img src="/assets/Moneda/Coin.png" alt="DC" style={{ width: '18px', height: '18px', objectFit: 'contain', display: 'inline', verticalAlign: 'middle' }} /> Vender
                 <span className="block text-sm opacity-70">50 DC</span>
               </button>
 
@@ -676,6 +677,13 @@ function IncubatorTab({
   const handleSendToHabitat = (egg, habitatId, dragonWithName) => {
     const dragon = dragonWithName || egg.dragonData;
 
+    // Validación de elemento: el dragón debe ser compatible con el habitat
+    const targetHabitat = habitats.find(h => h.id === habitatId);
+    if (targetHabitat && targetHabitat.element && targetHabitat.element !== egg.element) {
+      alert(`❌ Un dragón de ${egg.element} no puede vivir en un habitat de ${targetHabitat.element}`);
+      return;
+    }
+
     setAllDragons(prev => [...prev, { ...dragon, habitatId }]);
 
     setHabitats(prev => prev.map(h => {
@@ -788,7 +796,7 @@ function IncubatorTab({
           🥚 Incubadora
         </h2>
         <div className="flex items-center gap-2 text-yellow-400">
-          <span>💰</span>
+          <img src="/assets/Moneda/Coin.png" alt="DC" style={{ width: '20px', height: '20px', objectFit: 'contain' }} />
           <span className="font-bold">{userProfile.dragoncoins} DC</span>
         </div>
       </div>
@@ -914,7 +922,7 @@ function IncubatorTab({
                   <span className="text-3xl">{element.emoji}</span>
                   <span className="text-white font-medium">{element.name}</span>
                   <span className="text-yellow-400 text-sm">
-                    💰 {SHOP_PRICES.egg[element.id]} DC
+                    <img src="/assets/Moneda/Coin.png" alt="DC" style={{ width: '16px', height: '16px', objectFit: 'contain', display: 'inline', verticalAlign: 'middle' }} /> {SHOP_PRICES.egg[element.id]} DC
                   </span>
                 </button>
               ))}
@@ -1063,7 +1071,7 @@ function HabitatsTab({
                   />
                   <span className="text-white font-medium">{element.name}</span>
                   <span className="text-yellow-400 text-sm">
-                    💰 {SHOP_PRICES.habitat[element.id]} DC
+                    <img src="/assets/Moneda/Coin.png" alt="DC" style={{ width: '16px', height: '16px', objectFit: 'contain', display: 'inline', verticalAlign: 'middle' }} /> {SHOP_PRICES.habitat[element.id]} DC
                   </span>
                 </button>
               ))}
@@ -1387,7 +1395,7 @@ function ProfileXPBar({ userProfile }) {
       </div>
 
       <div className="flex items-center gap-1 px-3 py-1 bg-yellow-500/20 rounded-lg">
-        <span>💰</span>
+        <img src="/assets/Moneda/Coin.png" alt="DC" style={{ width: '20px', height: '20px', objectFit: 'contain' }} />
         <span className="text-yellow-400 font-bold">{userProfile.dragoncoins}</span>
       </div>
     </div>
@@ -1536,7 +1544,7 @@ function GiftButton({ userProfile, setUserProfile }) {
 
                 <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-xl p-4 mb-6">
                   <div className="flex items-center justify-center gap-3">
-                    <span className="text-3xl">💰</span>
+                    <img src="/assets/Moneda/Coin.png" alt="DC" style={{ width: '32px', height: '32px', objectFit: 'contain' }} />
                     <span className="text-2xl font-bold text-yellow-400">100 Dragoncoins</span>
                   </div>
                 </div>
@@ -1574,7 +1582,7 @@ function GiftButton({ userProfile, setUserProfile }) {
                         animationDelay: `${Math.random() * 0.3}s`,
                       }}
                     >
-                      💰
+                      <img src="/assets/Moneda/Coin.png" alt="DC" style={{ width: '24px', height: '24px', objectFit: 'contain' }} />
                     </div>
                   ))}
                 </div>
@@ -3154,6 +3162,13 @@ function App() {
   // FUNCIONES DE GUARDADO - BASADO EN USUARIO
   // ============================================
 
+  // Helper para obtener userId consistente entre dispositivos (v5.5)
+  const getUserId = useCallback((u) => {
+    if (!u) return null
+    // Prioridad: email > walletAddress > id (email es estable entre dispositivos)
+    return u.email || u.walletAddress || u.id || null
+  }, [])
+
   const saveGame = useCallback(async () => {
     if (!regenmon || !isAuthenticated || !user) return
 
@@ -3199,20 +3214,22 @@ function App() {
         breedingCooldowns,
       }
 
-      const userId = user.id || user.walletAddress
+      const userId = getUserId(user)
+      console.log('🔑 userId para guardar:', userId)
       await saveToSupabase(userId, saveData)
       console.log('☁️💾 Partida guardada en Supabase')
 
     } catch (error) {
       console.error('Error al guardar:', error)
     }
-  }, [regenmon, stats, resources, cooldowns, dailyUses, meta, currentView, isAuthenticated, user, saveToSupabase, userProfile, incubator, habitats, allDragons, breedingCooldowns])
+  }, [regenmon, stats, resources, cooldowns, dailyUses, meta, currentView, isAuthenticated, user, saveToSupabase, userProfile, incubator, habitats, allDragons, breedingCooldowns, getUserId])
 
   const loadGame = useCallback(async () => {
     if (!isAuthenticated || !user) return null
 
     try {
-      const userId = user.id || user.walletAddress
+      const userId = getUserId(user)
+      console.log('🔑 userId para cargar:', userId)
       const savedData = await loadFromSupabase(userId)
 
       if (!savedData) {
@@ -3230,7 +3247,7 @@ function App() {
 
   const deleteSave = useCallback(async () => {
     if (!isAuthenticated || !user) return
-    const userId = user.id || user.walletAddress
+    const userId = getUserId(user)
     await deleteFromSupabase(userId)
     console.log('🗑️ Partida borrada de Supabase')
   }, [isAuthenticated, user, deleteFromSupabase])
@@ -3309,7 +3326,7 @@ function App() {
         })
 
         // Cargar partida desde Supabase
-        const userId = user.id || user.walletAddress
+        const userId = getUserId(user)
         console.log('🔍 Buscando partida en Supabase para:', userId)
 
         const savedData = await loadFromSupabase(userId)
@@ -3342,9 +3359,7 @@ function App() {
           if (savedData.allDragons) setAllDragons(savedData.allDragons)
           if (savedData.breedingCooldowns) setBreedingCooldowns(savedData.breedingCooldowns)
 
-          if (!savedData.userProfile?.hasClaimedWelcomeGift) {
-            setShowWelcomeGift(true)
-          }
+          // El regalo de bienvenida se muestra después de eclosionar el primer huevo (v5.4)
 
           const today = new Date().toDateString()
           if (savedData.dailyUses?.lastReset !== today) {
@@ -3428,8 +3443,7 @@ function App() {
     setDailyUses(newDailyUses)
     setMeta(newMeta)
 
-    // Mostrar regalo de bienvenida para nuevos usuarios (v5.0)
-    setShowWelcomeGift(true)
+    // El regalo de bienvenida se muestra después de eclosionar el primer huevo (v5.4)
 
     // GUARDAR INMEDIATAMENTE en Supabase
     const saveData = {
@@ -3452,12 +3466,12 @@ function App() {
         createdAt: Date.now(),
       },
       incubator: { slots: 1, eggs: [] },
-      habitats: [{ id: 'habitat_1', element: null, level: 1, maxDragons: 2, dragons: [] }],
+      habitats: [{ id: 'habitat_1', element: elementId, level: 1, maxDragons: 2, dragons: [] }],
       allDragons: [],
       breedingCooldowns: {},
     }
 
-    const userId = user?.id || user?.walletAddress
+    const userId = getUserId(user)
     if (userId) {
       saveToSupabase(userId, saveData)
     }
@@ -3547,7 +3561,10 @@ function App() {
       setBreedingCooldowns({})
       setShowWelcomeGift(false)
 
-      // 4. Ir a la landing page
+      // 4. Limpiar localStorage de autenticación para evitar auto-reconnect (v5.5)
+      localStorage.removeItem('regenmon_auth')
+
+      // 5. Ir a la landing page
       setCurrentView('landing')
 
       console.log('✅ Logout completado - vista: landing')
@@ -3618,6 +3635,11 @@ function App() {
             setHabitats(prev => prev.map(h =>
               h.id === 'habitat_1' ? { ...h, element: regenmon.class, dragons: [initialDragon.id] } : h
             ))
+
+            // Mostrar regalo de bienvenida después del primer huevo (v5.4)
+            if (!userProfile.hasClaimedWelcomeGift) {
+              setShowWelcomeGift(true)
+            }
 
             setCurrentView('dragon-reveal')
           }}
