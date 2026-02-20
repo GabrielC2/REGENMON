@@ -3521,61 +3521,66 @@ function App() {
   }
 
   // ============================================
-  // LOGOUT COMPLETO - CORREGIDO (v4.8)
+  // LOGOUT COMPLETO - v5.6b
   // ============================================
+
+  // Helper para limpiar TODAS las keys de autenticación de localStorage
+  const clearAllAuthStorage = () => {
+    const keysToRemove = []
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i)
+      if (
+        key.includes('thirdweb') ||
+        key.includes('walletConnect') ||
+        key.includes('wc@') ||
+        key.includes('WALLETCONNECT') ||
+        key.includes('regenmon_auth') ||
+        key.includes('regenmon_session') ||
+        key.includes('-active-wallet') ||
+        key.includes('tw-') ||
+        key.includes('wagmi') ||
+        key.includes('coinbaseWallet')
+      ) {
+        keysToRemove.push(key)
+      }
+    }
+    keysToRemove.forEach(key => {
+      console.log('🗑️ Eliminando key de auth:', key)
+      localStorage.removeItem(key)
+    })
+    console.log(`🧹 ${keysToRemove.length} keys de auth eliminadas`)
+  }
 
   const handleLogout = async () => {
     console.log('🚪 handleLogout iniciado')
 
     try {
-      // 1. Llamar al logout del hook de autenticación
-      const result = await authLogout()
-      console.log('Resultado de authLogout:', result)
+      // 1. Guardar partida antes de salir
+      if (regenmon && isAuthenticated && user) {
+        await saveGame()
+        console.log('💾 Partida guardada antes del logout')
+      }
 
-      // 2. Resetear todos los estados del juego
-      setRegenmon(null)
-      setStats({ hunger: 100, energy: 100, happiness: 100 })
-      setResources({ food: 10, maxFood: 50, lastFoodGenTime: Date.now(), lastHungerDecay: Date.now() })
-      setCooldowns({ feed: 0, train: 0, play: 0, rest: 0 })
-      setDailyUses({ feed: 0, train: 0, play: 0, lastReset: new Date().toDateString() })
-      setMeta({ lastSaved: 0, createdAt: 0 })
-      setUserData(null)
+      // 2. Llamar al logout del hook de autenticación
+      try {
+        await authLogout()
+      } catch (e) {
+        console.warn('Error en authLogout (ignorado):', e)
+      }
 
-      // 3. Resetear estados de economía v5.0
-      setUserProfile({
-        level: 1,
-        exp: 0,
-        dragoncoins: 0,
-        hasClaimedWelcomeGift: false,
-        createdAt: Date.now(),
-      })
-      setIncubator({ slots: 1, eggs: [] })
-      setHabitats([{
-        id: 'habitat_1',
-        element: null,
-        level: 1,
-        maxDragons: 2,
-        dragons: [],
-      }])
-      setAllDragons([])
-      setBreedingCooldowns({})
-      setShowWelcomeGift(false)
+      // 3. Limpiar TODAS las keys de auth de localStorage
+      clearAllAuthStorage()
 
-      // 4. Limpiar localStorage de autenticación para evitar auto-reconnect (v5.5)
-      localStorage.removeItem('regenmon_auth')
+      console.log('✅ Logout completado, recargando página...')
 
-      // 5. Ir a la landing page
-      setCurrentView('landing')
-
-      console.log('✅ Logout completado - vista: landing')
+      // 4. Forzar recarga limpia para garantizar estado limpio
+      window.location.reload()
 
     } catch (error) {
       console.error('Error en handleLogout:', error)
-
-      // Forzar ir a landing aunque haya error
-      setCurrentView('landing')
-      setRegenmon(null)
-      setUserData(null)
+      // Forzar limpieza aunque haya error
+      clearAllAuthStorage()
+      window.location.reload()
     }
   }
 
@@ -3586,8 +3591,9 @@ function App() {
   if (currentView === 'loading' || authLoading) {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center bg-[#0a0a0f]">
+        <div style={{ fontSize: '4rem' }} className="mb-4 animate-bounce">🐉</div>
         <div className="w-12 h-12 border-4 border-white/10 border-t-[#8b5cf6] rounded-full animate-spin mb-4"></div>
-        <p className="text-gray-400">Cargando...</p>
+        <p className="text-[#a78bfa] text-lg">Cargando tu aventura...</p>
       </div>
     )
   }
