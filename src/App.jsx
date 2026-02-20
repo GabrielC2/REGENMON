@@ -3621,11 +3621,16 @@ function App() {
         <HatchingPage
           regenmonData={regenmon}
           onHatchComplete={(dragonId) => {
-            setRegenmon(prev => ({ ...prev, dragonId }))
+            // Generar ID único para el dragón starter (v5.8)
+            const starterDragonId = `dragon_main_${Date.now()}`
+
+            // CRÍTICO: asignar tanto dragonId como id al regenmon activo
+            // para que onSelectDragon pueda encontrarlo en allDragons
+            setRegenmon(prev => ({ ...prev, dragonId, id: starterDragonId }))
 
             // Agregar dragón inicial a allDragons (v5.0)
             const initialDragon = {
-              id: `dragon_main_${Date.now()}`,
+              id: starterDragonId,
               name: regenmon.name,
               element: regenmon.class,
               level: 1,
