@@ -3,13 +3,20 @@ import { supabase } from '../lib/supabase'
 
 export function useSupabaseSave() {
 
-    /**
-     * Guarda la partida del usuario en Supabase
-     * @param {string} userId - wallet address o identificador único del usuario
-     * @param {object} saveData - objeto completo con todos los datos del juego
-     */
     const saveToSupabase = useCallback(async (userId, saveData) => {
         if (!userId || !saveData) return { success: false, error: 'userId o saveData inválido' }
+
+        // Si Supabase no está disponible, guardar en localStorage directamente
+        if (!supabase) {
+            try {
+                localStorage.setItem(`regenmon_user_${userId}_regenmon_save_v4`, JSON.stringify(saveData))
+                console.log('💾 Guardado en localStorage (Supabase no disponible)')
+                return { success: true, fallback: true }
+            } catch (err) {
+                console.error('❌ Error guardando en localStorage:', err)
+                return { success: false, error: err }
+            }
+        }
 
         try {
             const { error } = await supabase
@@ -24,9 +31,9 @@ export function useSupabaseSave() {
 
             if (error) {
                 console.error('❌ Error guardando en Supabase:', error)
-                // Fallback a localStorage si Supabase falla
+                // Fallback a localStorage
                 try {
-                    localStorage.setItem(`regenmon_backup_${userId}`, JSON.stringify(saveData))
+                    localStorage.setItem(`regenmon_user_${userId}_regenmon_save_v4`, JSON.stringify(saveData))
                     console.warn('⚠️ Guardado en localStorage como backup')
                 } catch (localErr) {
                     console.error('❌ Error en fallback localStorage:', localErr)
@@ -39,16 +46,33 @@ export function useSupabaseSave() {
 
         } catch (err) {
             console.error('❌ Excepción al guardar en Supabase:', err)
+            // Fallback a localStorage
+            try {
+                localStorage.setItem(`regenmon_user_${userId}_regenmon_save_v4`, JSON.stringify(saveData))
+                console.warn('⚠️ Guardado en localStorage como backup tras excepción')
+            } catch (localErr) { }
             return { success: false, error: err }
         }
     }, [])
 
-    /**
-     * Carga la partida del usuario desde Supabase
-     * @param {string} userId - wallet address o identificador único del usuario
-     */
     const loadFromSupabase = useCallback(async (userId) => {
         if (!userId) return null
+
+        // Si Supabase no está disponible, cargar desde localStorage directamente
+        if (!supabase) {
+            console.warn('⚠️ Supabase no disponible, cargando desde localStorage')
+            try {
+                const localSave = localStorage.getItem(`regenmon_user_${userId}_regenmon_save_v4`)
+                if (localSave) {
+                    console.log('📦 Partida cargada desde localStorage (fallback)')
+                    return JSON.parse(localSave)
+                }
+                return null
+            } catch (err) {
+                console.error('❌ Error cargando desde localStorage:', err)
+                return null
+            }
+        }
 
         try {
             const { data, error } = await supabase
@@ -59,17 +83,13 @@ export function useSupabaseSave() {
 
             if (error) {
                 if (error.code === 'PGRST116') {
-                    // No existe partida en Supabase — puede ser usuario nuevo o partida en localStorage
                     console.log('📭 No hay partida en Supabase para este usuario')
 
                     // Intentar migrar desde localStorage si existe
-                    const localBackup = localStorage.getItem(`regenmon_backup_${userId}`)
                     const localSave = localStorage.getItem(`regenmon_user_${userId}_regenmon_save_v4`)
-
-                    const localData = localSave || localBackup
-                    if (localData) {
+                    if (localSave) {
                         console.log('🔄 Encontrada partida en localStorage, migrando a Supabase...')
-                        const parsed = JSON.parse(localData)
+                        const parsed = JSON.parse(localSave)
                         await saveToSupabase(userId, parsed)
                         return parsed
                     }
@@ -77,6 +97,13 @@ export function useSupabaseSave() {
                     return null
                 }
                 console.error('❌ Error cargando desde Supabase:', error)
+
+                // Intentar fallback a localStorage
+                try {
+                    const localSave = localStorage.getItem(`regenmon_user_${userId}_regenmon_save_v4`)
+                    if (localSave) return JSON.parse(localSave)
+                } catch { }
+
                 return null
             }
 
@@ -85,16 +112,27 @@ export function useSupabaseSave() {
 
         } catch (err) {
             console.error('❌ Excepción al cargar desde Supabase:', err)
+
+            // Fallback a localStorage
+            try {
+                const localSave = localStorage.getItem(`regenmon_user_${userId}_regenmon_save_v4`)
+                if (localSave) {
+                    console.warn('⚠️ Usando localStorage como fallback tras excepción')
+                    return JSON.parse(localSave)
+                }
+            } catch { }
+
             return null
         }
     }, [saveToSupabase])
 
-    /**
-     * Borra la partida del usuario de Supabase
-     * @param {string} userId
-     */
     const deleteFromSupabase = useCallback(async (userId) => {
         if (!userId) return
+
+        if (!supabase) {
+            localStorage.removeItem(`regenmon_user_${userId}_regenmon_save_v4`)
+            return
+        }
 
         try {
             const { error } = await supabase
