@@ -1534,3 +1534,22 @@ body {
 .confirm-export-button:hover {
   background: rgba(239, 68, 68, 0.4);
 }
+
+/* ============================================
+   ANIMACIÓN DE MONEDAS (v5.0)
+   ============================================ */
+
+@keyframes coinFall {
+  0% {
+    transform: translateY(-50px) rotate(0deg);
+    opacity: 1;
+  }
+  100% {
+    transform: translateY(400px) rotate(360deg);
+    opacity: 0;
+  }
+}
+
+.animate-coin-fall {
+  animation: coinFall 1.5s ease-in forwards;
+}

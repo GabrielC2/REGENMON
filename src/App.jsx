@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useAuth } from './hooks/useAuth'
+import { useSupabaseSave } from './hooks/useSupabaseSave'
 import LoginModal from './components/LoginModal'
 import UserHeader from './components/UserHeader'
 
@@ -69,13 +70,92 @@ const TIMERS = {
 };
 
 // ============================================
-// EFECTOS DE ACCIONES (v3.6)
+// EFECTOS DE ACCIONES (v5.0) - FIX DESCANSAR
 // ============================================
 const ACTION_EFFECTS = {
   feed: { hunger: 20, energy: 10, happiness: 5, exp: 2, foodCost: 1 },
   train: { hunger: -10, energy: -20, exp: 25 },
   play: { energy: -15, happiness: 20, exp: 12 },
-  rest: { hunger: -5, energy: 20, exp: 5 },
+  rest: { hunger: -5, energy: 20, happiness: -5, exp: 5 }, // FIX: Ahora consume -5 felicidad
+};
+
+// ============================================
+// CONFIGURACIÓN DE ECONOMÍA - v5.0
+// ============================================
+const ECONOMY_CONFIG = {
+  welcomeGift: 100,
+  dragonLevelUpReward: 1,
+  profileLevelUpBaseReward: 10,
+  profileExpPerDragonLevel: 50,
+};
+
+const PROFILE_EXP_TABLE = {
+  1: 0, 2: 100, 3: 250, 4: 450, 5: 700, 6: 1000, 7: 1350, 8: 1750, 9: 2200, 10: 2700,
+  11: 3250, 12: 3850, 13: 4500, 14: 5200, 15: 6000, 16: 6850, 17: 7750, 18: 8700, 19: 9700, 20: 10750,
+};
+
+const SHOP_PRICES = {
+  egg: { fuego: 150, agua: 150, tierra: 150, aire: 150 },
+  incubatorSlot: 200,
+  incubatorSlot3: 400,
+  habitat: { fuego: 300, agua: 300, tierra: 300, aire: 300 },
+  habitatUpgrade: 250,
+  breedCost: 100,
+  breedHybridBonus: 50,
+};
+
+const INCUBATION_TIME = 2 * 60 * 1000; // 2 minutos
+const BREED_COOLDOWN = 48 * 60 * 60 * 1000; // 48 horas
+
+// ============================================
+// CONFIGURACIÓN DE BREEDING - HÍBRIDOS
+// ============================================
+const HYBRID_CHANCES = {
+  'fuego+tierra': { hybrid: 'lava', chance: 0.15 },
+  'tierra+fuego': { hybrid: 'lava', chance: 0.15 },
+  'agua+aire': { hybrid: 'hielo', chance: 0.15 },
+  'aire+agua': { hybrid: 'hielo', chance: 0.15 },
+  'fuego+aire': { hybrid: 'rayo', chance: 0.15 },
+  'aire+fuego': { hybrid: 'rayo', chance: 0.15 },
+  'tierra+agua': { hybrid: 'naturaleza', chance: 0.15 },
+  'agua+tierra': { hybrid: 'naturaleza', chance: 0.15 },
+};
+
+const HYBRID_ELEMENTS = {
+  lava: { name: 'LAVA', emoji: '🌋', color: '#ff6b35', folder: 'LAVA' },
+  hielo: { name: 'HIELO', emoji: '❄️', color: '#74b9ff', folder: 'HIELO' },
+  rayo: { name: 'RAYO', emoji: '⚡', color: '#f1c40f', folder: 'RAYO' },
+  naturaleza: { name: 'NATURALEZA', emoji: '🌿', color: '#00b894', folder: 'NATURALEZA' },
+};
+
+// ============================================
+// CÓDIGOS PROMOCIONALES - v5.1
+// ============================================
+const PROMO_CODES = {
+  'DRAGON2024': { reward: 200, type: 'dc', description: '200 Dragoncoins' },
+  'WELCOMEFIRE': { reward: 200, type: 'dc', description: '200 Dragoncoins' },
+  'REGENMON100': { reward: 200, type: 'dc', description: '200 Dragoncoins' },
+  'FREECOINS01': { reward: 200, type: 'dc', description: '200 Dragoncoins' },
+  'TESTCODE001': { reward: 200, type: 'dc', description: '200 Dragoncoins' },
+  'DRAGONLOVE': { reward: 200, type: 'dc', description: '200 Dragoncoins' },
+  'HABITAT2024': { reward: 200, type: 'dc', description: '200 Dragoncoins' },
+  'BREEDPOWER': { reward: 200, type: 'dc', description: '200 Dragoncoins' },
+  'INCUBATOR01': { reward: 200, type: 'dc', description: '200 Dragoncoins' },
+  'SUPERDRAGON': { reward: 200, type: 'dc', description: '200 Dragoncoins' },
+};
+
+// ============================================
+// RUTAS DE IMÁGENES DE HABITATS - v5.1
+// ============================================
+const HABITAT_IMAGES = {
+  fuego: '/assets/Habitats/HFuego.png',
+  agua: '/assets/Habitats/HAgua.png',
+  tierra: '/assets/Habitats/HTierra.png',
+  aire: '/assets/Habitats/HAire.png',
+};
+
+const getHabitatImagePath = (element) => {
+  return HABITAT_IMAGES[element] || '/assets/Habitats/HFuego.png';
 };
 
 const ELEMENT_BONUSES = {
@@ -212,6 +292,1470 @@ function ExplosionParticles({ colors, active }) {
       {particles.map(p => <div key={p.id} style={{ '--angle': `${p.angle}deg`, '--distance': `${p.distance}px`, width: p.size, height: p.size, backgroundColor: p.color, borderRadius: '50%', position: 'absolute', animation: `explode 0.8s ease-out ${p.delay} forwards` }} />)}
     </div>
   )
+}
+
+// ============================================
+// COMPONENTE: REGALO DE BIENVENIDA (v5.0)
+// ============================================
+
+function WelcomeGiftModal({ isOpen, onClaim }) {
+  const [claimed, setClaimed] = useState(false);
+
+  if (!isOpen) return null;
+
+  const handleClaim = () => {
+    setClaimed(true);
+    setTimeout(() => {
+      onClaim();
+    }, 2500);
+  };
+
+  return (
+    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/90 backdrop-blur-sm">
+      <div className="relative bg-gradient-to-b from-[#1a1a2e] to-[#0f0f1a] border border-yellow-500/30 rounded-3xl p-8 w-[90%] max-w-[400px] text-center overflow-hidden">
+
+        {!claimed ? (
+          <>
+            <div className="text-6xl mb-4 animate-bounce">🎁</div>
+            <h2 className="text-2xl font-bold text-white mb-2">¡Bienvenido a Regenmon!</h2>
+            <p className="text-gray-400 mb-6">Como nuevo entrenador, tienes un regalo esperándote</p>
+
+            <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-xl p-4 mb-6">
+              <div className="flex items-center justify-center gap-3">
+                <span className="text-3xl">💰</span>
+                <span className="text-2xl font-bold text-yellow-400">100 Dragoncoins</span>
+              </div>
+            </div>
+
+            <button
+              onClick={handleClaim}
+              className="w-full py-4 bg-gradient-to-r from-yellow-500 to-amber-500 rounded-xl text-white font-bold text-lg hover:from-yellow-400 hover:to-amber-400 transition-all transform hover:scale-105 shadow-lg shadow-yellow-500/25"
+            >
+              ✨ RECLAMAR ✨
+            </button>
+          </>
+        ) : (
+          <>
+            <div className="py-8">
+              <div className="text-6xl mb-4 animate-pulse">💰</div>
+              <h2 className="text-2xl font-bold text-yellow-400 mb-2">¡Felicidades!</h2>
+              <p className="text-xl text-white">Acabas de obtener</p>
+              <p className="text-4xl font-bold text-yellow-400 mt-2">100 Dragoncoins</p>
+
+              <div className="absolute inset-0 pointer-events-none overflow-hidden">
+                {Array.from({ length: 20 }).map((_, i) => (
+                  <div
+                    key={i}
+                    className="absolute text-2xl animate-coin-fall"
+                    style={{
+                      left: `${Math.random() * 100}%`,
+                      animationDelay: `${Math.random() * 0.5}s`,
+                      animationDuration: `${1 + Math.random() * 0.5}s`,
+                    }}
+                  >
+                    💰
+                  </div>
+                ))}
+              </div>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ============================================
+// COMPONENTE: NAVEGACIÓN DE PESTAÑAS (v5.0)
+// ============================================
+
+function TabNavigation({ activeTab, setActiveTab, incubatorCount, habitatsCount }) {
+  const tabs = [
+    { id: 'dragon', label: 'Mi Dragón', icon: '🐲', badge: null },
+    { id: 'incubator', label: 'Incubadora', icon: '🥚', badge: incubatorCount > 0 ? incubatorCount : null },
+    { id: 'habitats', label: 'Habitats', icon: '🏠', badge: habitatsCount },
+    { id: 'breed', label: 'Breed', icon: '💕', badge: null },
+  ];
+
+  return (
+    <div className="flex justify-center gap-2 mb-4 px-4">
+      {tabs.map(tab => (
+        <button
+          key={tab.id}
+          onClick={() => setActiveTab(tab.id)}
+          className={`
+            relative flex items-center gap-2 px-3 py-2 rounded-xl font-medium text-xs transition-all
+            ${activeTab === tab.id
+              ? 'bg-purple-500/30 border border-purple-500/50 text-white'
+              : 'bg-white/5 border border-white/10 text-gray-400 hover:bg-white/10'
+            }
+          `}
+        >
+          <span>{tab.icon}</span>
+          <span className="hidden sm:inline">{tab.label}</span>
+          {tab.badge && (
+            <span className="absolute -top-1 -right-1 w-5 h-5 bg-red-500 rounded-full text-xs text-white flex items-center justify-center">
+              {tab.badge}
+            </span>
+          )}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+// ============================================
+// COMPONENTE: MODAL DE DRAGÓN ECLOSIONADO CON NOMBRE (v5.2)
+// ============================================
+
+function HatchedDragonModal({
+  egg,
+  onClose,
+  onSendToHabitat,
+  onSell,
+  habitats,
+  allDragons,
+  element
+}) {
+  const [dragonName, setDragonName] = useState('');
+  const [nameError, setNameError] = useState('');
+  const [showSelectHabitat, setShowSelectHabitat] = useState(false);
+
+  if (!egg) return null;
+
+  const elementInfo = ELEMENTS.find(e => e.id === element);
+
+  const checkNameExists = (name) => {
+    return allDragons.some(d => d.name.toLowerCase() === name.toLowerCase());
+  };
+
+  const validateName = () => {
+    const trimmedName = dragonName.trim();
+
+    if (!trimmedName) {
+      setNameError('Ingresa un nombre para tu dragón');
+      return false;
+    }
+
+    if (trimmedName.length < 2) {
+      setNameError('El nombre debe tener al menos 2 caracteres');
+      return false;
+    }
+
+    if (trimmedName.length > 15) {
+      setNameError('El nombre no puede tener más de 15 caracteres');
+      return false;
+    }
+
+    if (checkNameExists(trimmedName)) {
+      setNameError('Este nombre ya está siendo utilizado');
+      return false;
+    }
+
+    setNameError('');
+    return true;
+  };
+
+  const handleSendToHabitat = () => {
+    if (!validateName()) return;
+    setShowSelectHabitat(true);
+  };
+
+  const confirmSendToHabitat = (habitatId) => {
+    const dragonWithName = {
+      ...egg.dragonData,
+      name: dragonName.trim(),
+    };
+    onSendToHabitat(egg, habitatId, dragonWithName);
+  };
+
+  const handleSell = () => {
+    onSell(egg);
+  };
+
+  const getAvailableHabitats = () => {
+    return habitats.filter(h => {
+      const isCompatible = h.element === element || h.element === null || h.dragons.length === 0;
+      const hasSpace = h.dragons.length < h.maxDragons;
+      return isCompatible && hasSpace;
+    });
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 backdrop-blur-sm p-4">
+      <div className="bg-gradient-to-b from-[#1a1a2e] to-[#0f0f1a] border border-green-500/30 rounded-3xl p-8 w-[95%] max-w-md text-center">
+
+        {!showSelectHabitat ? (
+          <>
+            <h3 className="text-2xl font-bold text-white mb-2">🎉 ¡Nuevo Dragón!</h3>
+            <p className="text-gray-400 mb-6">
+              Tu huevo de {elementInfo?.emoji} {element} ha eclosionado
+            </p>
+
+            <div className="relative mb-6">
+              <div className="absolute inset-0 bg-gradient-to-b from-transparent via-green-500/20 to-transparent rounded-full blur-2xl"></div>
+              <img
+                src={getDragonImagePath(element, egg.dragonData?.dragonId || 1, 1)}
+                alt="Nuevo dragón"
+                className="w-40 h-40 mx-auto object-contain relative z-10 animate-float"
+                style={{ filter: 'drop-shadow(0 0 30px rgba(34, 197, 94, 0.4))' }}
+              />
+            </div>
+
+            <div className="mb-6">
+              <label className="block text-sm text-gray-400 mb-2 text-left">
+                Dale un nombre a tu dragón
+              </label>
+              <div className="relative">
+                <input
+                  type="text"
+                  value={dragonName}
+                  onChange={(e) => {
+                    setDragonName(e.target.value);
+                    setNameError('');
+                  }}
+                  placeholder="Nombre del dragón"
+                  maxLength={15}
+                  className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white text-center text-lg font-medium focus:outline-none focus:border-purple-500 transition-colors"
+                />
+                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-500">
+                  {dragonName.length}/15
+                </span>
+              </div>
+              {nameError && (
+                <p className="text-red-400 text-sm mt-2 text-left">❌ {nameError}</p>
+              )}
+            </div>
+
+            <div className="bg-white/5 rounded-xl p-4 mb-6">
+              <div className="flex items-center justify-center gap-2">
+                <span className="text-2xl">{elementInfo?.emoji}</span>
+                <span className="text-white font-medium">
+                  Dragón de {element.charAt(0).toUpperCase() + element.slice(1)}
+                </span>
+              </div>
+              <p className="text-gray-400 text-sm mt-1">Nivel 1 • Bebé</p>
+            </div>
+
+            <div className="flex gap-4">
+              <button
+                onClick={handleSell}
+                className="flex-1 py-4 px-4 bg-red-500/20 border border-red-500/50 rounded-xl text-red-400 font-medium hover:bg-red-500/30 transition-all text-lg"
+              >
+                💰 Vender
+                <span className="block text-sm opacity-70">50 DC</span>
+              </button>
+
+              <button
+                onClick={handleSendToHabitat}
+                className="flex-1 py-4 px-4 bg-gradient-to-r from-green-500 to-emerald-500 rounded-xl text-white font-medium hover:from-green-400 hover:to-emerald-400 transition-all text-lg"
+              >
+                🏠 Habitat
+                <span className="block text-sm opacity-70">Guardar</span>
+              </button>
+            </div>
+
+            <button
+              onClick={onClose}
+              className="mt-4 text-gray-500 text-sm hover:text-gray-300"
+            >
+              Cerrar
+            </button>
+          </>
+        ) : (
+          <>
+            <h3 className="text-xl font-bold text-white mb-2">Selecciona un Habitat</h3>
+            <p className="text-gray-400 text-sm mb-4">
+              Para <span className="text-purple-400 font-medium">{dragonName}</span>
+            </p>
+
+            {getAvailableHabitats().length === 0 ? (
+              <div className="text-center py-8">
+                <span className="text-5xl block mb-4">🏠</span>
+                <p className="text-gray-400">No tienes habitats disponibles</p>
+                <p className="text-sm text-gray-500 mt-2">
+                  Compra un habitat de {element} en la pestaña Habitats
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-3 max-h-64 overflow-y-auto mb-4">
+                {getAvailableHabitats().map(habitat => {
+                  const habitatElement = ELEMENTS.find(e => e.id === habitat.element);
+                  return (
+                    <button
+                      key={habitat.id}
+                      onClick={() => confirmSendToHabitat(habitat.id)}
+                      className="w-full p-4 bg-white/5 border border-white/10 rounded-xl flex items-center gap-4 hover:bg-white/10 hover:border-green-500/50 transition-all"
+                    >
+                      <img
+                        src={getHabitatImagePath(habitat.element)}
+                        alt={`Habitat de ${habitat.element}`}
+                        className="w-16 h-16 object-contain"
+                      />
+                      <div className="text-left flex-1">
+                        <p className="text-white font-medium">
+                          {habitatElement?.emoji} Habitat de {habitat.element ? habitat.element.charAt(0).toUpperCase() + habitat.element.slice(1) : 'General'}
+                        </p>
+                        <p className="text-xs text-gray-400">
+                          {habitat.dragons.length}/{habitat.maxDragons} dragones • Nivel {habitat.level}
+                        </p>
+                      </div>
+                      <span className="text-green-400">→</span>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+
+            <button
+              onClick={() => setShowSelectHabitat(false)}
+              className="w-full py-3 bg-white/10 rounded-xl text-white hover:bg-white/15"
+            >
+              ← Volver
+            </button>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ============================================
+// COMPONENTE: INCUBADORA (v5.2) - TAMAÑOS CORREGIDOS
+// ============================================
+
+function IncubatorTab({
+  incubator,
+  setIncubator,
+  userProfile,
+  setUserProfile,
+  habitats,
+  setHabitats,
+  allDragons,
+  setAllDragons,
+  onHatchComplete
+}) {
+  const [showBuyModal, setShowBuyModal] = useState(false);
+  const [showHatchedModal, setShowHatchedModal] = useState(null);
+
+  // Timer para actualizar eclosiones
+  useEffect(() => {
+    const interval = setInterval(() => {
+      const now = Date.now();
+
+      setIncubator(prev => {
+        const updatedEggs = prev.eggs.map(egg => {
+          if (!egg.hatched && now >= egg.hatchTime) {
+            return {
+              ...egg,
+              hatched: true,
+              readyToCollect: true,
+              dragonData: {
+                id: `dragon_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+                name: `Dragón ${egg.element.charAt(0).toUpperCase() + egg.element.slice(1)}`,
+                element: egg.element,
+                level: 1,
+                exp: 0,
+                maturityState: 1,
+                dragonId: 1,
+                createdAt: Date.now(),
+              }
+            };
+          }
+          return egg;
+        });
+
+        return { ...prev, eggs: updatedEggs };
+      });
+    }, 1000);
+
+    return () => clearInterval(interval);
+  }, [setIncubator]);
+
+  // Mandar dragón a habitat CON NOMBRE (v5.2)
+  const handleSendToHabitat = (egg, habitatId, dragonWithName) => {
+    const dragon = dragonWithName || egg.dragonData;
+
+    setAllDragons(prev => [...prev, { ...dragon, habitatId }]);
+
+    setHabitats(prev => prev.map(h => {
+      if (h.id === habitatId) {
+        const newDragons = [...h.dragons, dragon.id];
+        return { ...h, dragons: newDragons, element: h.element || egg.element };
+      }
+      return h;
+    }));
+
+    setIncubator(prev => ({
+      ...prev,
+      eggs: prev.eggs.filter(e => e.id !== egg.id),
+    }));
+
+    setShowHatchedModal(null);
+  };
+
+  // Vender dragón
+  const handleSellDragon = (egg) => {
+    const sellPrice = 50;
+
+    setUserProfile(prev => ({
+      ...prev,
+      dragoncoins: prev.dragoncoins + sellPrice,
+    }));
+
+    setIncubator(prev => ({
+      ...prev,
+      eggs: prev.eggs.filter(e => e.id !== egg.id),
+    }));
+
+    setShowHatchedModal(null);
+  };
+
+  const handleBuyEgg = (element) => {
+    const price = SHOP_PRICES.egg[element];
+
+    if (userProfile.dragoncoins < price) {
+      alert('No tienes suficientes Dragoncoins');
+      return;
+    }
+
+    if (incubator.eggs.length >= incubator.slots) {
+      alert('No tienes espacio en la incubadora');
+      return;
+    }
+
+    setUserProfile(prev => ({
+      ...prev,
+      dragoncoins: prev.dragoncoins - price,
+    }));
+
+    const newEgg = {
+      id: `egg_${Date.now()}`,
+      element: element,
+      startTime: Date.now(),
+      hatchTime: Date.now() + INCUBATION_TIME,
+      hatched: false,
+      readyToCollect: false,
+    };
+
+    setIncubator(prev => ({
+      ...prev,
+      eggs: [...prev.eggs, newEgg],
+    }));
+
+    setShowBuyModal(false);
+  };
+
+  const handleBuySlot = () => {
+    if (incubator.slots >= 3) {
+      alert('Ya tienes el máximo de slots');
+      return;
+    }
+
+    const price = incubator.slots === 1
+      ? SHOP_PRICES.incubatorSlot
+      : SHOP_PRICES.incubatorSlot3;
+
+    if (userProfile.dragoncoins < price) {
+      alert('No tienes suficientes Dragoncoins');
+      return;
+    }
+
+    setUserProfile(prev => ({
+      ...prev,
+      dragoncoins: prev.dragoncoins - price,
+    }));
+
+    setIncubator(prev => ({
+      ...prev,
+      slots: prev.slots + 1,
+    }));
+  };
+
+  const getTimeRemaining = (hatchTime) => {
+    const remaining = hatchTime - Date.now();
+    if (remaining <= 0) return 'Listo';
+
+    const minutes = Math.floor(remaining / 60000);
+    const seconds = Math.floor((remaining % 60000) / 1000);
+    return `${minutes}:${seconds.toString().padStart(2, '0')}`;
+  };
+
+  return (
+    <div className="p-4">
+      <div className="flex items-center justify-between mb-6">
+        <h2 className="text-xl font-bold text-white flex items-center gap-2">
+          🥚 Incubadora
+        </h2>
+        <div className="flex items-center gap-2 text-yellow-400">
+          <span>💰</span>
+          <span className="font-bold">{userProfile.dragoncoins} DC</span>
+        </div>
+      </div>
+
+      {/* SLOTS DE INCUBADORA - TAMAÑOS CORREGIDOS v5.2 */}
+      <div className="grid grid-cols-3 gap-6 mb-6">
+        {Array.from({ length: 3 }).map((_, index) => {
+          const egg = incubator.eggs[index];
+          const isUnlocked = index < incubator.slots;
+
+          return (
+            <div
+              key={index}
+              className={`
+                relative rounded-2xl border-2 flex flex-col items-center justify-center p-6 transition-all min-h-[280px]
+                ${isUnlocked
+                  ? egg
+                    ? egg.hatched
+                      ? 'bg-gradient-to-b from-green-500/20 to-green-500/5 border-green-500/50 cursor-pointer hover:border-green-400'
+                      : 'bg-gradient-to-b from-purple-500/20 to-purple-500/5 border-purple-500/50'
+                    : 'bg-white/5 border-white/20 border-dashed cursor-pointer hover:bg-white/10'
+                  : 'bg-black/30 border-gray-700 cursor-pointer hover:border-yellow-500/50'
+                }
+              `}
+              onClick={() => {
+                if (!isUnlocked) {
+                  handleBuySlot();
+                } else if (!egg) {
+                  setShowBuyModal(true);
+                } else if (egg.hatched) {
+                  setShowHatchedModal(egg);
+                }
+              }}
+            >
+              {isUnlocked ? (
+                egg ? (
+                  egg.hatched ? (
+                    <>
+                      {/* DRAGÓN ECLOSIONADO - TAMAÑO 200% MÁS GRANDE */}
+                      <img
+                        src={getDragonImagePath(egg.element, egg.dragonData?.dragonId || 1, 1)}
+                        alt={`Dragón de ${egg.element}`}
+                        className="w-36 h-36 object-contain animate-bounce"
+                        style={{ filter: 'drop-shadow(0 0 20px rgba(34, 197, 94, 0.5))' }}
+                      />
+                      <p className="text-lg text-green-400 font-bold mt-4">¡Eclosionó!</p>
+                      <p className="text-sm text-gray-400 mt-1">Click para ver</p>
+                    </>
+                  ) : (
+                    <>
+                      {/* HUEVO EN INCUBACIÓN - TAMAÑO 200% MÁS GRANDE */}
+                      <img
+                        src={LANDING_ASSETS.eggs[egg.element]}
+                        alt={`Huevo de ${egg.element}`}
+                        className="w-36 h-36 object-contain animate-pulse"
+                        style={{ filter: 'drop-shadow(0 0 15px rgba(168, 85, 247, 0.5))' }}
+                      />
+                      <div className="mt-4 text-center">
+                        <p className="text-base text-gray-400 font-medium">Eclosiona en</p>
+                        <p className="text-4xl font-bold text-purple-400 mt-2">
+                          {getTimeRemaining(egg.hatchTime)}
+                        </p>
+                      </div>
+                    </>
+                  )
+                ) : (
+                  <>
+                    {/* Slot vacío - TAMAÑO AUMENTADO */}
+                    <span className="text-6xl opacity-30">🥚</span>
+                    <p className="text-base text-gray-500 mt-4">Vacío</p>
+                    <p className="text-base text-purple-400 mt-1">Click para comprar</p>
+                  </>
+                )
+              ) : (
+                <>
+                  {/* Slot bloqueado - TAMAÑO AUMENTADO */}
+                  <span className="text-5xl">🔒</span>
+                  <p className="text-base text-gray-500 mt-4">Bloqueado</p>
+                  <p className="text-lg text-yellow-400 font-bold mt-1">
+                    {index === 1 ? SHOP_PRICES.incubatorSlot : SHOP_PRICES.incubatorSlot3} DC
+                  </p>
+                </>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      {/* MODAL: DRAGÓN ECLOSIONADO CON NOMBRE v5.2 */}
+      {showHatchedModal && (
+        <HatchedDragonModal
+          egg={showHatchedModal}
+          onClose={() => setShowHatchedModal(null)}
+          onSendToHabitat={handleSendToHabitat}
+          onSell={handleSellDragon}
+          habitats={habitats}
+          allDragons={allDragons}
+          element={showHatchedModal.element}
+        />
+      )}
+
+      {/* Modal de compra de huevo */}
+      {showBuyModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80">
+          <div className="bg-[#1a1a2e] border border-white/10 rounded-2xl p-6 w-[90%] max-w-md">
+            <h3 className="text-lg font-bold text-white mb-4">Comprar Huevo</h3>
+
+            <div className="grid grid-cols-2 gap-3">
+              {ELEMENTS.map(element => (
+                <button
+                  key={element.id}
+                  onClick={() => handleBuyEgg(element.id)}
+                  disabled={userProfile.dragoncoins < SHOP_PRICES.egg[element.id]}
+                  className={`
+                    p-4 rounded-xl border-2 flex flex-col items-center gap-2 transition-all
+                    ${userProfile.dragoncoins >= SHOP_PRICES.egg[element.id]
+                      ? 'border-white/20 hover:border-purple-500/50 hover:bg-purple-500/10'
+                      : 'border-gray-700 opacity-50 cursor-not-allowed'
+                    }
+                  `}
+                  style={{ borderColor: element.color + '40' }}
+                >
+                  <span className="text-3xl">{element.emoji}</span>
+                  <span className="text-white font-medium">{element.name}</span>
+                  <span className="text-yellow-400 text-sm">
+                    💰 {SHOP_PRICES.egg[element.id]} DC
+                  </span>
+                </button>
+              ))}
+            </div>
+
+            <button
+              onClick={() => setShowBuyModal(false)}
+              className="w-full mt-4 py-3 bg-white/10 rounded-xl text-white hover:bg-white/15"
+            >
+              Cancelar
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ============================================
+// COMPONENTE: HABITATS (v5.1) - CON MODAL DETALLE
+// ============================================
+
+function HabitatsTab({
+  habitats,
+  setHabitats,
+  allDragons,
+  userProfile,
+  setUserProfile,
+  onSelectDragon
+}) {
+  const [showBuyModal, setShowBuyModal] = useState(false);
+  const [selectedHabitat, setSelectedHabitat] = useState(null);
+
+  const handleBuyHabitat = (element) => {
+    const price = SHOP_PRICES.habitat[element];
+
+    if (userProfile.dragoncoins < price) {
+      alert('No tienes suficientes Dragoncoins');
+      return;
+    }
+
+    setUserProfile(prev => ({
+      ...prev,
+      dragoncoins: prev.dragoncoins - price,
+    }));
+
+    const newHabitat = {
+      id: `habitat_${Date.now()}`,
+      element: element,
+      level: 1,
+      maxDragons: 2,
+      dragons: [],
+    };
+
+    setHabitats(prev => [...prev, newHabitat]);
+    setShowBuyModal(false);
+  };
+
+  const getDragonsInHabitat = (habitatId) => {
+    return allDragons.filter(d => d.habitatId === habitatId);
+  };
+
+  return (
+    <div className="p-4">
+      <div className="flex items-center justify-between mb-6">
+        <h2 className="text-xl font-bold text-white flex items-center gap-2">
+          🏠 Habitats
+        </h2>
+        <button
+          onClick={() => setShowBuyModal(true)}
+          className="px-4 py-2 bg-purple-500/20 border border-purple-500/50 rounded-xl text-purple-400 text-sm font-medium hover:bg-purple-500/30"
+        >
+          + Nuevo Habitat
+        </button>
+      </div>
+
+      <div className="grid grid-cols-2 gap-4">
+        {habitats.map(habitat => {
+          const dragonsHere = getDragonsInHabitat(habitat.id);
+          const elementInfo = ELEMENTS.find(e => e.id === habitat.element);
+
+          return (
+            <button
+              key={habitat.id}
+              onClick={() => setSelectedHabitat(habitat)}
+              className="bg-white/5 border border-white/10 rounded-2xl p-4 text-left hover:bg-white/10 hover:border-purple-500/30 transition-all"
+              style={{ borderColor: elementInfo?.color + '30' }}
+            >
+              <div className="flex justify-center mb-3">
+                <img
+                  src={getHabitatImagePath(habitat.element)}
+                  alt={`Habitat de ${habitat.element}`}
+                  className="w-20 h-20 object-contain"
+                />
+              </div>
+
+              <div className="text-center">
+                <p className="text-white font-medium text-sm">
+                  {elementInfo?.emoji} {habitat.element ? habitat.element.charAt(0).toUpperCase() + habitat.element.slice(1) : 'General'}
+                </p>
+                <p className="text-xs text-gray-400 mt-1">
+                  Nv.{habitat.level} • {dragonsHere.length}/{habitat.maxDragons} 🐲
+                </p>
+              </div>
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Modal de detalle de habitat */}
+      {selectedHabitat && (
+        <HabitatDetailModal
+          habitat={selectedHabitat}
+          onClose={() => setSelectedHabitat(null)}
+          allDragons={allDragons}
+          userProfile={userProfile}
+          setUserProfile={setUserProfile}
+          setHabitats={setHabitats}
+          onSelectDragon={onSelectDragon}
+        />
+      )}
+
+      {showBuyModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80">
+          <div className="bg-[#1a1a2e] border border-white/10 rounded-2xl p-6 w-[90%] max-w-md">
+            <h3 className="text-lg font-bold text-white mb-4">Comprar Habitat</h3>
+
+            <div className="grid grid-cols-2 gap-3">
+              {ELEMENTS.map(element => (
+                <button
+                  key={element.id}
+                  onClick={() => handleBuyHabitat(element.id)}
+                  disabled={userProfile.dragoncoins < SHOP_PRICES.habitat[element.id]}
+                  className={`
+                    p-4 rounded-xl border-2 flex flex-col items-center gap-2 transition-all
+                    ${userProfile.dragoncoins >= SHOP_PRICES.habitat[element.id]
+                      ? 'border-white/20 hover:border-purple-500/50 hover:bg-purple-500/10'
+                      : 'border-gray-700 opacity-50 cursor-not-allowed'
+                    }
+                  `}
+                >
+                  <img
+                    src={getHabitatImagePath(element.id)}
+                    alt={`Habitat de ${element.name}`}
+                    className="w-16 h-16 object-contain"
+                  />
+                  <span className="text-white font-medium">{element.name}</span>
+                  <span className="text-yellow-400 text-sm">
+                    💰 {SHOP_PRICES.habitat[element.id]} DC
+                  </span>
+                </button>
+              ))}
+            </div>
+
+            <button
+              onClick={() => setShowBuyModal(false)}
+              className="w-full mt-4 py-3 bg-white/10 rounded-xl text-white hover:bg-white/15"
+            >
+              Cancelar
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ============================================
+// COMPONENTE: BREED (v5.0)
+// ============================================
+
+function BreedTab({
+  allDragons,
+  userProfile,
+  setUserProfile,
+  incubator,
+  setIncubator,
+  breedingCooldowns,
+  setBreedingCooldowns,
+  regenmonData
+}) {
+  const [selectedParent1, setSelectedParent1] = useState(null);
+  const [selectedParent2, setSelectedParent2] = useState(null);
+  const [showResult, setShowResult] = useState(null);
+
+  const adultDragons = allDragons.filter(d => d.level >= 10);
+
+  const canBreed = (dragon) => {
+    const cooldown = breedingCooldowns[dragon.id];
+    if (!cooldown) return true;
+    return Date.now() >= cooldown;
+  };
+
+  const calculateBreedResult = (parent1, parent2) => {
+    const combo = `${parent1.element}+${parent2.element}`;
+    const hybridInfo = HYBRID_CHANCES[combo];
+
+    if (hybridInfo && Math.random() < hybridInfo.chance) {
+      return { element: hybridInfo.hybrid, isHybrid: true };
+    }
+
+    return {
+      element: Math.random() < 0.5 ? parent1.element : parent2.element,
+      isHybrid: false
+    };
+  };
+
+  const handleBreed = () => {
+    if (!selectedParent1 || !selectedParent2) {
+      alert('Selecciona dos dragones');
+      return;
+    }
+
+    if (selectedParent1.id === selectedParent2.id) {
+      alert('No puedes criar un dragón consigo mismo');
+      return;
+    }
+
+    if (!canBreed(selectedParent1) || !canBreed(selectedParent2)) {
+      alert('Uno de los dragones está en cooldown');
+      return;
+    }
+
+    if (incubator.eggs.length >= incubator.slots) {
+      alert('No tienes espacio en la incubadora');
+      return;
+    }
+
+    const cost = SHOP_PRICES.breedCost;
+    if (userProfile.dragoncoins < cost) {
+      alert('No tienes suficientes Dragoncoins');
+      return;
+    }
+
+    setUserProfile(prev => ({
+      ...prev,
+      dragoncoins: prev.dragoncoins - cost,
+    }));
+
+    const result = calculateBreedResult(selectedParent1, selectedParent2);
+
+    const newEgg = {
+      id: `egg_${Date.now()}`,
+      element: result.element,
+      startTime: Date.now(),
+      hatchTime: Date.now() + INCUBATION_TIME,
+      hatched: false,
+      readyToCollect: false,
+      isHybrid: result.isHybrid,
+      parents: [selectedParent1.id, selectedParent2.id],
+    };
+
+    setIncubator(prev => ({
+      ...prev,
+      eggs: [...prev.eggs, newEgg],
+    }));
+
+    const cooldownTime = Date.now() + BREED_COOLDOWN;
+    setBreedingCooldowns(prev => ({
+      ...prev,
+      [selectedParent1.id]: cooldownTime,
+      [selectedParent2.id]: cooldownTime,
+    }));
+
+    setShowResult(result);
+
+    setTimeout(() => {
+      setSelectedParent1(null);
+      setSelectedParent2(null);
+      setShowResult(null);
+    }, 3000);
+  };
+
+  const formatCooldown = (timestamp) => {
+    const remaining = timestamp - Date.now();
+    if (remaining <= 0) return null;
+
+    const hours = Math.floor(remaining / (60 * 60 * 1000));
+    const minutes = Math.floor((remaining % (60 * 60 * 1000)) / (60 * 1000));
+
+    return `${hours}h ${minutes}m`;
+  };
+
+  return (
+    <div className="p-4">
+      <div className="flex items-center justify-between mb-6">
+        <h2 className="text-xl font-bold text-white flex items-center gap-2">
+          💕 Breeding
+        </h2>
+        <div className="text-sm text-gray-400">
+          Dragones adultos: {adultDragons.length}
+        </div>
+      </div>
+
+      <div className="bg-white/5 border border-white/10 rounded-2xl p-6 mb-6">
+        <div className="flex items-center justify-center gap-4 mb-6">
+          <div
+            onClick={() => setSelectedParent1(null)}
+            className={`
+              w-24 h-24 rounded-2xl border-2 flex items-center justify-center
+              ${selectedParent1
+                ? 'bg-pink-500/20 border-pink-500/50'
+                : 'bg-white/5 border-white/20 border-dashed'
+              }
+            `}
+          >
+            {selectedParent1 ? (
+              <div className="text-center">
+                <img
+                  src={getDragonImagePath(selectedParent1.element, selectedParent1.dragonId, selectedParent1.maturityState)}
+                  alt={selectedParent1.name}
+                  className="w-16 h-16 object-contain"
+                />
+              </div>
+            ) : (
+              <span className="text-gray-500">?</span>
+            )}
+          </div>
+
+          <div className="text-3xl animate-pulse">💕</div>
+
+          <div
+            onClick={() => setSelectedParent2(null)}
+            className={`
+              w-24 h-24 rounded-2xl border-2 flex items-center justify-center
+              ${selectedParent2
+                ? 'bg-blue-500/20 border-blue-500/50'
+                : 'bg-white/5 border-white/20 border-dashed'
+              }
+            `}
+          >
+            {selectedParent2 ? (
+              <div className="text-center">
+                <img
+                  src={getDragonImagePath(selectedParent2.element, selectedParent2.dragonId, selectedParent2.maturityState)}
+                  alt={selectedParent2.name}
+                  className="w-16 h-16 object-contain"
+                />
+              </div>
+            ) : (
+              <span className="text-gray-500">?</span>
+            )}
+          </div>
+        </div>
+
+        <button
+          onClick={handleBreed}
+          disabled={!selectedParent1 || !selectedParent2 || userProfile.dragoncoins < SHOP_PRICES.breedCost}
+          className={`
+            w-full py-3 rounded-xl font-bold text-lg transition-all
+            ${selectedParent1 && selectedParent2 && userProfile.dragoncoins >= SHOP_PRICES.breedCost
+              ? 'bg-gradient-to-r from-pink-500 to-purple-500 text-white hover:from-pink-400 hover:to-purple-400'
+              : 'bg-gray-700 text-gray-400 cursor-not-allowed'
+            }
+          `}
+        >
+          Criar ({SHOP_PRICES.breedCost} DC)
+        </button>
+      </div>
+
+      <h3 className="text-sm font-medium text-gray-400 mb-3">
+        Selecciona dos dragones adultos (Nivel 10+)
+      </h3>
+
+      {adultDragons.length === 0 ? (
+        <div className="text-center py-8 text-gray-500">
+          <p>No tienes dragones adultos aún</p>
+          <p className="text-sm">Sube tus dragones a nivel 10 para poder criarlos</p>
+        </div>
+      ) : (
+        <div className="grid grid-cols-3 sm:grid-cols-4 gap-3">
+          {adultDragons.map(dragon => {
+            const isSelected = selectedParent1?.id === dragon.id || selectedParent2?.id === dragon.id;
+            const cooldown = formatCooldown(breedingCooldowns[dragon.id]);
+
+            return (
+              <button
+                key={dragon.id}
+                onClick={() => {
+                  if (cooldown) return;
+
+                  if (!selectedParent1) {
+                    setSelectedParent1(dragon);
+                  } else if (!selectedParent2 && dragon.id !== selectedParent1.id) {
+                    setSelectedParent2(dragon);
+                  }
+                }}
+                disabled={!!cooldown}
+                className={`
+                  p-3 rounded-xl border-2 transition-all
+                  ${isSelected
+                    ? 'border-purple-500 bg-purple-500/20'
+                    : cooldown
+                      ? 'border-gray-700 opacity-50'
+                      : 'border-white/10 hover:border-purple-500/50'
+                  }
+                `}
+              >
+                <img
+                  src={getDragonImagePath(dragon.element, dragon.dragonId, dragon.maturityState)}
+                  alt={dragon.name}
+                  className="w-12 h-12 mx-auto object-contain"
+                />
+                <p className="text-xs text-white truncate mt-1">{dragon.name}</p>
+                <p className="text-[10px] text-gray-400">Nv.{dragon.level}</p>
+                {cooldown && (
+                  <p className="text-[10px] text-red-400">⏳ {cooldown}</p>
+                )}
+              </button>
+            );
+          })}
+        </div>
+      )}
+
+      {showResult && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80">
+          <div className="bg-[#1a1a2e] border border-white/10 rounded-2xl p-8 text-center">
+            <div className="text-5xl mb-4">🥚</div>
+            <h3 className="text-xl font-bold text-white mb-2">
+              {showResult.isHybrid ? '¡WOW! ¡Huevo Híbrido!' : '¡Nuevo Huevo!'}
+            </h3>
+            <p className="text-gray-400">
+              Obtuviste un huevo de{' '}
+              <span className="text-purple-400 font-bold">
+                {showResult.element.charAt(0).toUpperCase() + showResult.element.slice(1)}
+              </span>
+            </p>
+            {showResult.isHybrid && (
+              <p className="text-yellow-400 text-sm mt-2">🌟 ¡Elemento raro!</p>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ============================================
+// COMPONENTE: BARRA DE XP DEL PERFIL (v5.1)
+// ============================================
+
+function ProfileXPBar({ userProfile }) {
+  const currentLevelExp = PROFILE_EXP_TABLE[userProfile.level] || 0;
+  const nextLevelExp = PROFILE_EXP_TABLE[userProfile.level + 1] || PROFILE_EXP_TABLE[20];
+  const expInCurrentLevel = userProfile.exp - currentLevelExp;
+  const expNeededForLevel = nextLevelExp - currentLevelExp;
+  const expProgress = Math.min(100, (expInCurrentLevel / expNeededForLevel) * 100);
+
+  return (
+    <div className="flex items-center gap-3 px-4 py-2 bg-white/5 rounded-xl border border-white/10">
+      <div className="flex items-center gap-2">
+        <span className="text-lg">👤</span>
+        <div className="text-center">
+          <p className="text-xs text-gray-400">Perfil</p>
+          <p className="text-white font-bold">Nv.{userProfile.level}</p>
+        </div>
+      </div>
+
+      <div className="flex-1">
+        <div className="flex justify-between text-[10px] text-gray-400 mb-1">
+          <span>XP</span>
+          <span>{expInCurrentLevel}/{expNeededForLevel}</span>
+        </div>
+        <div className="w-full h-2 bg-white/10 rounded-full overflow-hidden">
+          <div
+            className="h-full bg-gradient-to-r from-blue-500 to-cyan-400 rounded-full transition-all duration-500"
+            style={{ width: `${expProgress}%` }}
+          />
+        </div>
+      </div>
+
+      <div className="flex items-center gap-1 px-3 py-1 bg-yellow-500/20 rounded-lg">
+        <span>💰</span>
+        <span className="text-yellow-400 font-bold">{userProfile.dragoncoins}</span>
+      </div>
+    </div>
+  );
+}
+
+// ============================================
+// COMPONENTE: CANJEAR CÓDIGO (v5.1)
+// ============================================
+
+function RedeemCodeModal({ isOpen, onClose, userProfile, setUserProfile }) {
+  const [code, setCode] = useState('');
+  const [message, setMessage] = useState(null);
+  const [usedCodes, setUsedCodes] = useState(() => {
+    const saved = localStorage.getItem('regenmon_used_codes');
+    return saved ? JSON.parse(saved) : [];
+  });
+
+  const handleRedeem = () => {
+    const upperCode = code.toUpperCase().trim();
+
+    if (!PROMO_CODES[upperCode]) {
+      setMessage({ type: 'error', text: 'Código inválido' });
+      return;
+    }
+
+    if (usedCodes.includes(upperCode)) {
+      setMessage({ type: 'error', text: 'Ya usaste este código' });
+      return;
+    }
+
+    const promo = PROMO_CODES[upperCode];
+
+    if (promo.type === 'dc') {
+      setUserProfile(prev => ({
+        ...prev,
+        dragoncoins: prev.dragoncoins + promo.reward,
+      }));
+    }
+
+    const newUsedCodes = [...usedCodes, upperCode];
+    setUsedCodes(newUsedCodes);
+    localStorage.setItem('regenmon_used_codes', JSON.stringify(newUsedCodes));
+
+    setMessage({ type: 'success', text: `¡Canjeaste ${promo.description}!` });
+    setCode('');
+
+    setTimeout(() => {
+      onClose();
+      setMessage(null);
+    }, 2000);
+  };
+
+  if (!isOpen) return null;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85">
+      <div className="bg-[#1a1a2e] border border-white/10 rounded-2xl p-6 w-[90%] max-w-sm">
+        <h3 className="text-lg font-bold text-white mb-4 text-center">🎟️ Canjear Código</h3>
+
+        <input
+          type="text"
+          value={code}
+          onChange={(e) => setCode(e.target.value.toUpperCase())}
+          placeholder="Ingresa tu código"
+          className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white text-center font-mono text-lg focus:outline-none focus:border-purple-500"
+          maxLength={20}
+        />
+
+        {message && (
+          <div className={`mt-3 p-3 rounded-lg text-center ${message.type === 'success'
+            ? 'bg-green-500/20 text-green-400'
+            : 'bg-red-500/20 text-red-400'
+            }`}>
+            {message.text}
+          </div>
+        )}
+
+        <div className="flex gap-3 mt-4">
+          <button
+            onClick={onClose}
+            className="flex-1 py-3 bg-white/10 rounded-xl text-white hover:bg-white/15"
+          >
+            Cancelar
+          </button>
+          <button
+            onClick={handleRedeem}
+            disabled={!code.trim()}
+            className="flex-1 py-3 bg-gradient-to-r from-purple-500 to-pink-500 rounded-xl text-white font-medium hover:from-purple-400 hover:to-pink-400 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            Canjear
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ============================================
+// COMPONENTE: BOTÓN DE REGALO (v5.1)
+// ============================================
+
+function GiftButton({ userProfile, setUserProfile }) {
+  const [showGiftModal, setShowGiftModal] = useState(false);
+  const [claimed, setClaimed] = useState(false);
+
+  if (userProfile.hasClaimedWelcomeGift) return null;
+
+  const handleClaim = () => {
+    setClaimed(true);
+
+    setTimeout(() => {
+      setUserProfile(prev => ({
+        ...prev,
+        dragoncoins: prev.dragoncoins + 100,
+        hasClaimedWelcomeGift: true,
+      }));
+
+      setTimeout(() => {
+        setShowGiftModal(false);
+      }, 2000);
+    }, 500);
+  };
+
+  return (
+    <>
+      <button
+        onClick={() => setShowGiftModal(true)}
+        className="relative animate-bounce"
+        title="¡Tienes un regalo!"
+      >
+        <span className="text-2xl">🎁</span>
+        <span className="absolute -top-1 -right-1 w-3 h-3 bg-red-500 rounded-full animate-ping"></span>
+        <span className="absolute -top-1 -right-1 w-3 h-3 bg-red-500 rounded-full"></span>
+      </button>
+
+      {showGiftModal && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/90 backdrop-blur-sm">
+          <div className="relative bg-gradient-to-b from-[#1a1a2e] to-[#0f0f1a] border border-yellow-500/30 rounded-3xl p-8 w-[90%] max-w-[400px] text-center overflow-hidden">
+
+            {!claimed ? (
+              <>
+                <div className="text-6xl mb-4 animate-bounce">🎁</div>
+                <h2 className="text-2xl font-bold text-white mb-2">¡Regalo de Bienvenida!</h2>
+                <p className="text-gray-400 mb-6">Como nuevo entrenador, tienes un regalo especial</p>
+
+                <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-xl p-4 mb-6">
+                  <div className="flex items-center justify-center gap-3">
+                    <span className="text-3xl">💰</span>
+                    <span className="text-2xl font-bold text-yellow-400">100 Dragoncoins</span>
+                  </div>
+                </div>
+
+                <button
+                  onClick={handleClaim}
+                  className="w-full py-4 bg-gradient-to-r from-yellow-500 to-amber-500 rounded-xl text-white font-bold text-lg hover:from-yellow-400 hover:to-amber-400 transition-all transform hover:scale-105 shadow-lg shadow-yellow-500/25"
+                >
+                  ✨ RECLAMAR ✨
+                </button>
+
+                <button
+                  onClick={() => setShowGiftModal(false)}
+                  className="mt-4 text-gray-500 text-sm hover:text-gray-300"
+                >
+                  Más tarde
+                </button>
+              </>
+            ) : (
+              <>
+                <div className="py-8">
+                  <div className="text-6xl mb-4">🎉</div>
+                  <h2 className="text-2xl font-bold text-green-400 mb-2">¡Felicidades!</h2>
+                  <p className="text-xl text-white">Obtuviste</p>
+                  <p className="text-4xl font-bold text-yellow-400 mt-2">+100 DC</p>
+                </div>
+
+                <div className="absolute inset-0 pointer-events-none overflow-hidden">
+                  {Array.from({ length: 15 }).map((_, i) => (
+                    <div
+                      key={i}
+                      className="absolute text-2xl animate-coin-fall"
+                      style={{
+                        left: `${Math.random() * 100}%`,
+                        animationDelay: `${Math.random() * 0.3}s`,
+                      }}
+                    >
+                      💰
+                    </div>
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
+// ============================================
+// COMPONENTE: MODAL DE DETALLE DE HABITAT (v5.1)
+// ============================================
+
+function HabitatDetailModal({
+  habitat,
+  onClose,
+  allDragons,
+  userProfile,
+  setUserProfile,
+  setHabitats,
+  onSelectDragon
+}) {
+  if (!habitat) return null;
+
+  const dragonsInHabitat = allDragons.filter(d => d.habitatId === habitat.id);
+
+  const elementInfo = ELEMENTS.find(e => e.id === habitat.element) || {
+    name: 'General',
+    emoji: '🏠',
+    color: '#8b5cf6'
+  };
+
+  const handleUpgrade = () => {
+    if (habitat.level >= 2) {
+      alert('Nivel máximo alcanzado');
+      return;
+    }
+
+    if (userProfile.dragoncoins < SHOP_PRICES.habitatUpgrade) {
+      alert('No tienes suficientes Dragoncoins');
+      return;
+    }
+
+    setUserProfile(prev => ({
+      ...prev,
+      dragoncoins: prev.dragoncoins - SHOP_PRICES.habitatUpgrade,
+    }));
+
+    setHabitats(prev => prev.map(h => {
+      if (h.id === habitat.id) {
+        return {
+          ...h,
+          level: h.level + 1,
+          maxDragons: h.maxDragons + 2,
+        };
+      }
+      return h;
+    }));
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 backdrop-blur-sm p-4">
+      <div
+        className="bg-gradient-to-b from-[#1a1a2e] to-[#0f0f1a] border-2 rounded-3xl w-full max-w-lg overflow-hidden"
+        style={{ borderColor: elementInfo.color + '50' }}
+      >
+        <div
+          className="relative p-6 pb-4"
+          style={{ background: `linear-gradient(180deg, ${elementInfo.color}20 0%, transparent 100%)` }}
+        >
+          <button
+            onClick={onClose}
+            className="absolute top-4 right-4 w-10 h-10 bg-red-500 rounded-full text-white font-bold text-xl hover:bg-red-400 transition-all shadow-lg"
+          >
+            ✕
+          </button>
+
+          <h2 className="text-xl font-bold text-white text-center mb-4">
+            {elementInfo.emoji} Habitat de {elementInfo.name} nivel {habitat.level}
+          </h2>
+
+          <div className="flex gap-4">
+            <div className="flex-shrink-0">
+              <img
+                src={getHabitatImagePath(habitat.element)}
+                alt={`Habitat de ${habitat.element}`}
+                className="w-32 h-32 object-contain drop-shadow-2xl"
+              />
+            </div>
+
+            <div className="flex-1 space-y-3">
+              <div className="bg-white/10 rounded-xl p-3">
+                <p className="text-xs text-gray-400 mb-1">Máx. Dragones</p>
+                <div className="flex items-center gap-2">
+                  <span className="text-2xl">🐲</span>
+                  <span className="text-2xl font-bold text-white">
+                    {dragonsInHabitat.length}x / {habitat.maxDragons}
+                  </span>
+                </div>
+              </div>
+
+              <div className="bg-white/10 rounded-xl p-3">
+                <p className="text-xs text-gray-400 mb-1">Elemento</p>
+                <div className="flex items-center gap-2">
+                  <span className="text-xl">{elementInfo.emoji}</span>
+                  <span className="text-white font-medium">{elementInfo.name}</span>
+                </div>
+              </div>
+
+              <div className="bg-white/10 rounded-xl p-3">
+                <p className="text-xs text-gray-400 mb-1">Nivel</p>
+                <div className="flex items-center justify-between">
+                  <span className="text-white font-bold">Nivel {habitat.level}</span>
+                  {habitat.level < 2 && (
+                    <button
+                      onClick={handleUpgrade}
+                      className="text-xs px-2 py-1 bg-yellow-500/20 border border-yellow-500/50 rounded-lg text-yellow-400 hover:bg-yellow-500/30"
+                    >
+                      ⬆️ {SHOP_PRICES.habitatUpgrade} DC
+                    </button>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div className="p-6 pt-2">
+          <h3 className="text-sm font-medium text-gray-400 mb-3">
+            Dragones en este habitat
+          </h3>
+
+          {dragonsInHabitat.length === 0 ? (
+            <div className="text-center py-8 text-gray-500">
+              <span className="text-4xl block mb-2">🐲</span>
+              <p>No hay dragones en este habitat</p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-2 gap-3">
+              {dragonsInHabitat.map(dragon => (
+                <button
+                  key={dragon.id}
+                  onClick={() => {
+                    onSelectDragon(dragon);
+                    onClose();
+                  }}
+                  className="bg-white/5 border border-white/10 rounded-xl p-3 flex items-center gap-3 hover:bg-white/10 hover:border-purple-500/50 transition-all"
+                >
+                  <img
+                    src={getDragonImagePath(dragon.element, dragon.dragonId, dragon.maturityState)}
+                    alt={dragon.name}
+                    className="w-14 h-14 object-contain"
+                  />
+                  <div className="text-left flex-1 min-w-0">
+                    <p className="text-white font-medium truncate">{dragon.name}</p>
+                    <p className="text-xs text-gray-400">Nivel {dragon.level}</p>
+                  </div>
+                </button>
+              ))}
+            </div>
+          )}
+
+          {dragonsInHabitat.length < habitat.maxDragons && (
+            <div className="mt-3 grid grid-cols-2 gap-3">
+              {Array.from({ length: habitat.maxDragons - dragonsInHabitat.length }).map((_, i) => (
+                <div
+                  key={`empty-${i}`}
+                  className="bg-white/5 border border-white/10 border-dashed rounded-xl p-3 flex items-center justify-center h-20"
+                >
+                  <span className="text-gray-600 text-sm">Espacio vacío</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
 }
 
 // ============================================
@@ -896,7 +2440,19 @@ function GamePage({
   onLogout,
   userData,
   isGuest,
-  storagePrefix = ''
+  storagePrefix = '',
+  // Props de economía v5.0
+  userProfile,
+  setUserProfile,
+  incubator,
+  setIncubator,
+  habitats,
+  setHabitats,
+  allDragons,
+  setAllDragons,
+  breedingCooldowns,
+  setBreedingCooldowns,
+  addProfileExp,
 }) {
   const element = ELEMENTS.find(e => e.id === regenmonData.class)
   const folder = ELEMENT_TO_FOLDER[regenmonData.class]
@@ -906,6 +2462,8 @@ function GamePage({
   const [isEvolving, setIsEvolving] = useState(false)
   const [showResetConfirm, setShowResetConfirm] = useState(false)
   const [actionAnimations, setActionAnimations] = useState({})
+  const [activeTab, setActiveTab] = useState('dragon') // Sistema de pestañas v5.0
+  const [showRedeemCode, setShowRedeemCode] = useState(false) // Modal de códigos v5.1
 
   const regenmon = regenmonData
   const mood = calculateMood(stats)
@@ -1006,12 +2564,29 @@ function GamePage({
       let newMaturity = prev.maturityState
       let leveledUp = false
       let evolved = false
+      const oldLevel = prev.level
 
       while (newLevel < 15 && newExp >= EXP_TABLE[newLevel + 1]) {
         newLevel++
         leveledUp = true
         if (newLevel === 5) { newMaturity = 2; evolved = true }
         if (newLevel === 10) { newMaturity = 3; evolved = true }
+      }
+
+      // Recompensas por subir nivel v5.0
+      if (leveledUp) {
+        const levelsGained = newLevel - oldLevel
+
+        // +1 DC por nivel de dragón
+        setUserProfile(p => ({
+          ...p,
+          dragoncoins: p.dragoncoins + (levelsGained * ECONOMY_CONFIG.dragonLevelUpReward),
+        }))
+
+        // +50 XP de perfil por nivel de dragón
+        addProfileExp(levelsGained * ECONOMY_CONFIG.profileExpPerDragonLevel)
+
+        console.log(`🐲 Dragón subió ${levelsGained} nivel(es)! +${levelsGained} DC`)
       }
 
       if (evolved) { setIsEvolving(true); setTimeout(() => setIsEvolving(false), 1500) }
@@ -1245,108 +2820,239 @@ function GamePage({
         </div>
       )}
 
-      {/* HEADER: Nombre, Tipo y Estado (centrado, fuera del cuadro) */}
-      <header className="text-center pt-2 pb-2 relative z-10">
-        <h1 className="text-2xl md:text-3xl font-bold text-white">{regenmon.name}</h1>
-        <p className="text-sm md:text-base text-gray-400 mt-1">{element?.emoji} Dragón de {element?.name?.toLowerCase().charAt(0).toUpperCase() + element?.name?.toLowerCase().slice(1)}</p>
-        <p className="text-xs text-gray-500 mt-0.5 uppercase tracking-wider">{getMaturityLabel()}</p>
-      </header>
-
-      {/* ÁREA PRINCIPAL: Recursos (izq) + Dragón (centro) + Chat (der) */}
-      <div className="relative z-10 flex-1 px-4 pb-4">
-        <div className="max-w-4xl mx-auto flex gap-3 md:gap-4 flex-col md:flex-row items-start">
-
-          {/* Panel de Recursos (IZQUIERDA) */}
-          <div className="resources-left-panel w-full md:w-[140px] bg-black/40 backdrop-blur-md border border-white/10 rounded-xl p-3 flex md:flex-col items-center justify-around md:justify-start gap-2 shrink-0">
-            <h3 className="hidden md:block text-[10px] font-medium text-gray-500 mb-2 uppercase tracking-wider text-center">Recursos</h3>
-
-            {/* Comida */}
-            <div className="flex md:flex-col items-center gap-2 md:gap-1">
-              <span className="text-3xl md:text-4xl">🍖</span>
-              <div className="flex md:flex-col items-center gap-1">
-                <span className="text-[10px] text-gray-500 hidden md:block">Comida</span>
-                <span className="text-xl md:text-2xl font-bold text-white">{resources.food}<span className="text-gray-500 text-sm">/{resources.maxFood}</span></span>
-              </div>
-            </div>
-
-            {/* Timer */}
-            <div className="flex md:flex-col items-center gap-1 md:border-t md:border-white/10 md:pt-2 md:mt-1 md:w-full">
-              <span className="text-[10px] text-gray-500">Próxima:</span>
-              <span className="text-sm md:text-base text-white/80 font-medium">{getTimeUntilNextFood()}</span>
-            </div>
-          </div>
-
-          {/* Cuadro del Dragón (CENTRO) */}
-          <div className="dragon-display-box bg-black/40 backdrop-blur-md border-2 rounded-2xl p-3 relative" style={{ boxShadow: `0 0 40px ${element?.glowColor}`, borderColor: `${element?.color}60` }}>
-            {/* Header interno: XP | Reiniciar */}
-            <div className="flex justify-between items-start mb-2">
-              {/* XP Box */}
-              <div className={`bg-black/80 backdrop-blur-md border border-white/20 rounded-lg p-2 min-w-[90px] ${isLevelingUp ? 'animate-level-up-box' : ''}`}>
-                <div className="flex items-center gap-1 mb-1"><span className="text-xs">⭐</span><span className="text-xs font-bold text-white">Nv {regenmon.level}</span></div>
-                <div className="w-full h-1.5 bg-white/20 rounded-full overflow-hidden mb-1"><div className="h-full bg-gradient-to-r from-purple-500 to-pink-500 transition-all duration-500 rounded-full" style={{ width: `${Math.min(expProgress, 100)}%` }} /></div>
-                <div className="text-[10px] text-white/60 text-center">{expInCurrentLevel}/{expNeededForLevel} XP</div>
-              </div>
-
-              {/* Botón reset */}
-              <button onClick={() => setShowResetConfirm(true)} className="bg-black/80 backdrop-blur-md border border-white/20 rounded-lg px-2 py-1.5 flex flex-col items-center gap-0.5 text-gray-400 hover:text-red-400 hover:border-red-500/50 transition-all group">
-                <span className="text-base transition-transform duration-500 group-hover:rotate-180">🔄</span>
-                <span className="text-[8px]">Reiniciar</span>
-              </button>
-            </div>
-
-            {/* Imagen del dragón */}
-            <div className="dragon-image-container">
-              <div className="relative">
-                <img src={getDragonImagePath(regenmon.class, regenmon.dragonId, maturityState)} alt={regenmon.name} className={`dragon-image drop-shadow-2xl animate-dragon-idle ${isLevelingUp ? 'animate-level-up' : ''} ${isEvolving ? 'animate-evolution' : ''}`} style={{ '--dragon-scale': calculateDragonScale(regenmon.level) / 100 }} draggable={false} />
-                {isEvolving && <div className="absolute inset-0 flex items-center justify-center"><div className="absolute inset-0 bg-white/20 animate-ping rounded-full" /></div>}
-              </div>
-            </div>
-
-            {/* Estado de ánimo */}
-            <div className="flex items-center justify-center gap-2 pb-1">
-              <span className="text-lg">{moodConfig.emoji}</span>
-              <span className="text-sm font-medium" style={{ color: moodConfig.color }}>{moodConfig.label}</span>
-            </div>
-          </div>
-
-          {/* Panel de Chat (DERECHA) */}
-          <ChatPanel
-            regenmon={{
-              name: regenmon.name,
-              element: element?.name?.toLowerCase(),
-              maturityState: maturityState
-            }}
-            stats={stats}
-            onStatsChange={setStats}
-            storagePrefix={storagePrefix}
+      {/* HEADER DE ECONOMÍA v5.1 - Barra de XP del Perfil */}
+      <div className="px-4 py-2 relative z-10">
+        <div className="max-w-md mx-auto flex items-center gap-2">
+          {/* Botón de regalo */}
+          <GiftButton
+            userProfile={userProfile}
+            setUserProfile={setUserProfile}
           />
-        </div>
-      </div>
-
-      {/* Panel de Estadísticas */}
-      <div className="relative z-10 px-4 pb-2">
-        <div className="max-w-2xl mx-auto bg-black/30 backdrop-blur-sm rounded-xl p-3 border border-white/10">
-          <h3 className="text-[10px] font-medium text-gray-500 mb-2 uppercase tracking-wider">Estadísticas</h3>
-          <div className="grid grid-cols-3 gap-2">
-            <StatBar label="Hambre" icon="🍖" value={stats.hunger} />
-            <StatBar label="Energía" icon="⚡" value={stats.energy} />
-            <StatBar label="Felicidad" icon="😊" value={stats.happiness} />
+          {/* Botón de códigos */}
+          <button
+            onClick={() => setShowRedeemCode(true)}
+            className="text-xl hover:scale-110 transition-transform"
+            title="Canjear código"
+          >
+            🎟️
+          </button>
+          {/* Barra de XP del perfil */}
+          <div className="flex-1">
+            <ProfileXPBar userProfile={userProfile} />
           </div>
         </div>
       </div>
 
-      {/* Panel de Acciones */}
-      <div className="relative z-10 px-4 pb-4">
-        <div className="max-w-2xl mx-auto bg-black/30 backdrop-blur-sm rounded-xl p-3 border border-white/10">
-          <h3 className="text-[10px] font-medium text-gray-500 mb-2 uppercase tracking-wider">Acciones</h3>
-          <div className="grid grid-cols-4 gap-2">
-            <ActionButton actionKey="feed" />
-            <ActionButton actionKey="train" />
-            <ActionButton actionKey="play" />
-            <ActionButton actionKey="rest" />
+      {/* Modal de canjear código */}
+      <RedeemCodeModal
+        isOpen={showRedeemCode}
+        onClose={() => setShowRedeemCode(false)}
+        userProfile={userProfile}
+        setUserProfile={setUserProfile}
+      />
+
+      {/* NAVEGACIÓN DE PESTAÑAS v5.0 */}
+      <TabNavigation
+        activeTab={activeTab}
+        setActiveTab={setActiveTab}
+        incubatorCount={incubator.eggs.filter(e => e.readyToCollect).length}
+        habitatsCount={habitats.length}
+      />
+
+      {/* CONTENIDO SEGÚN PESTAÑA ACTIVA */}
+      {activeTab === 'dragon' && (
+        <>
+          {/* HEADER: Nombre, Tipo y Estado (centrado, fuera del cuadro) */}
+          <header className="text-center pt-2 pb-2 relative z-10">
+            <h1 className="text-2xl md:text-3xl font-bold text-white">{regenmon.name}</h1>
+            <p className="text-sm md:text-base text-gray-400 mt-1">{element?.emoji} Dragón de {element?.name?.toLowerCase().charAt(0).toUpperCase() + element?.name?.toLowerCase().slice(1)}</p>
+            <p className="text-xs text-gray-500 mt-0.5 uppercase tracking-wider">{getMaturityLabel()}</p>
+          </header>
+
+          {/* ÁREA PRINCIPAL: Recursos (izq) + Dragón (centro) + Chat (der) */}
+          <div className="relative z-10 flex-1 px-4 pb-4">
+            <div className="max-w-4xl mx-auto flex gap-3 md:gap-4 flex-col md:flex-row items-start">
+
+              {/* Panel de Recursos (IZQUIERDA) */}
+              <div className="resources-left-panel w-full md:w-[140px] bg-black/40 backdrop-blur-md border border-white/10 rounded-xl p-3 flex md:flex-col items-center justify-around md:justify-start gap-2 shrink-0">
+                <h3 className="hidden md:block text-[10px] font-medium text-gray-500 mb-2 uppercase tracking-wider text-center">Recursos</h3>
+
+                {/* Comida */}
+                <div className="flex md:flex-col items-center gap-2 md:gap-1">
+                  <span className="text-3xl md:text-4xl">🍖</span>
+                  <div className="flex md:flex-col items-center gap-1">
+                    <span className="text-[10px] text-gray-500 hidden md:block">Comida</span>
+                    <span className="text-xl md:text-2xl font-bold text-white">{resources.food}<span className="text-gray-500 text-sm">/{resources.maxFood}</span></span>
+                  </div>
+                </div>
+
+                {/* Timer */}
+                <div className="flex md:flex-col items-center gap-1 md:border-t md:border-white/10 md:pt-2 md:mt-1 md:w-full">
+                  <span className="text-[10px] text-gray-500">Próxima:</span>
+                  <span className="text-sm md:text-base text-white/80 font-medium">{getTimeUntilNextFood()}</span>
+                </div>
+              </div>
+
+              {/* Cuadro del Dragón (CENTRO) */}
+              <div className="dragon-display-box bg-black/40 backdrop-blur-md border-2 rounded-2xl p-3 relative" style={{ boxShadow: `0 0 40px ${element?.glowColor}`, borderColor: `${element?.color}60` }}>
+                {/* Header interno: XP | Reiniciar */}
+                <div className="flex justify-between items-start mb-2">
+                  {/* XP Box */}
+                  <div className={`bg-black/80 backdrop-blur-md border border-white/20 rounded-lg p-2 min-w-[90px] ${isLevelingUp ? 'animate-level-up-box' : ''}`}>
+                    <div className="flex items-center gap-1 mb-1"><span className="text-xs">⭐</span><span className="text-xs font-bold text-white">Nv {regenmon.level}</span></div>
+                    <div className="w-full h-1.5 bg-white/20 rounded-full overflow-hidden mb-1"><div className="h-full bg-gradient-to-r from-purple-500 to-pink-500 transition-all duration-500 rounded-full" style={{ width: `${Math.min(expProgress, 100)}%` }} /></div>
+                    <div className="text-[10px] text-white/60 text-center">{expInCurrentLevel}/{expNeededForLevel} XP</div>
+                  </div>
+
+                  {/* Botón reset */}
+                  <button onClick={() => setShowResetConfirm(true)} className="bg-black/80 backdrop-blur-md border border-white/20 rounded-lg px-2 py-1.5 flex flex-col items-center gap-0.5 text-gray-400 hover:text-red-400 hover:border-red-500/50 transition-all group">
+                    <span className="text-base transition-transform duration-500 group-hover:rotate-180">🔄</span>
+                    <span className="text-[8px]">Reiniciar</span>
+                  </button>
+                </div>
+
+                {/* Imagen del dragón */}
+                <div className="dragon-image-container">
+                  <div className="relative">
+                    <img src={getDragonImagePath(regenmon.class, regenmon.dragonId, maturityState)} alt={regenmon.name} className={`dragon-image drop-shadow-2xl animate-dragon-idle ${isLevelingUp ? 'animate-level-up' : ''} ${isEvolving ? 'animate-evolution' : ''}`} style={{ '--dragon-scale': calculateDragonScale(regenmon.level) / 100 }} draggable={false} />
+                    {isEvolving && <div className="absolute inset-0 flex items-center justify-center"><div className="absolute inset-0 bg-white/20 animate-ping rounded-full" /></div>}
+                  </div>
+                </div>
+
+                {/* Estado de ánimo */}
+                <div className="flex items-center justify-center gap-2 pb-1">
+                  <span className="text-lg">{moodConfig.emoji}</span>
+                  <span className="text-sm font-medium" style={{ color: moodConfig.color }}>{moodConfig.label}</span>
+                </div>
+              </div>
+
+              {/* Panel de Chat (DERECHA) */}
+              <ChatPanel
+                regenmon={{
+                  name: regenmon.name,
+                  element: element?.name?.toLowerCase(),
+                  maturityState: maturityState
+                }}
+                stats={stats}
+                onStatsChange={setStats}
+                storagePrefix={storagePrefix}
+              />
+            </div>
           </div>
-        </div>
-      </div>
+
+          {/* Panel de Estadísticas */}
+          <div className="relative z-10 px-4 pb-2">
+            <div className="max-w-2xl mx-auto bg-black/30 backdrop-blur-sm rounded-xl p-3 border border-white/10">
+              <h3 className="text-[10px] font-medium text-gray-500 mb-2 uppercase tracking-wider">Estadísticas</h3>
+              <div className="grid grid-cols-3 gap-2">
+                <StatBar label="Hambre" icon="🍖" value={stats.hunger} />
+                <StatBar label="Energía" icon="⚡" value={stats.energy} />
+                <StatBar label="Felicidad" icon="😊" value={stats.happiness} />
+              </div>
+            </div>
+          </div>
+
+          {/* Panel de Acciones */}
+          <div className="relative z-10 px-4 pb-4">
+            <div className="max-w-2xl mx-auto bg-black/30 backdrop-blur-sm rounded-xl p-3 border border-white/10">
+              <h3 className="text-[10px] font-medium text-gray-500 mb-2 uppercase tracking-wider">Acciones</h3>
+              <div className="grid grid-cols-4 gap-2">
+                <ActionButton actionKey="feed" />
+                <ActionButton actionKey="train" />
+                <ActionButton actionKey="play" />
+                <ActionButton actionKey="rest" />
+              </div>
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* PESTAÑA INCUBADORA */}
+      {activeTab === 'incubator' && (
+        <IncubatorTab
+          incubator={incubator}
+          setIncubator={setIncubator}
+          userProfile={userProfile}
+          setUserProfile={setUserProfile}
+          habitats={habitats}
+          setHabitats={setHabitats}
+          allDragons={allDragons}
+          setAllDragons={setAllDragons}
+        />
+      )}
+
+      {/* PESTAÑA HABITATS */}
+      {activeTab === 'habitats' && (
+        <HabitatsTab
+          habitats={habitats}
+          setHabitats={setHabitats}
+          allDragons={allDragons}
+          userProfile={userProfile}
+          setUserProfile={setUserProfile}
+          onSelectDragon={(dragon) => {
+            console.log('🐲 Dragón seleccionado desde habitat:', dragon);
+
+            // NUEVO: Guardar estado del dragón activo antes de cambiar
+            if (regenmon?.id) {
+              setAllDragons(prev => prev.map(d => {
+                if (d.id === regenmon.id) {
+                  return {
+                    ...d,
+                    name: regenmon.name,
+                    element: regenmon.class,
+                    dragonId: regenmon.dragonId,
+                    level: regenmon.level,
+                    exp: regenmon.exp,
+                    maturityState: regenmon.maturityState,
+                    stats: { ...stats },
+                  };
+                }
+                return d;
+              }));
+            }
+
+            // Cargar el nuevo dragón activo
+            setRegenmon({
+              name: dragon.name,
+              class: dragon.element,
+              dragonId: dragon.dragonId,
+              level: dragon.level,
+              exp: dragon.exp,
+              maturityState: dragon.maturityState,
+              id: dragon.id,
+              habitatId: dragon.habitatId,
+            });
+
+            // NUEVO: Cargar las stats del dragón seleccionado (si las tiene guardadas)
+            if (dragon.stats) {
+              setStats({
+                hunger: dragon.stats.hunger ?? 70,
+                energy: dragon.stats.energy ?? 70,
+                happiness: dragon.stats.happiness ?? 70,
+              });
+            } else {
+              // Si no tiene stats guardadas, usar valores neutros
+              setStats({ hunger: 70, energy: 70, happiness: 70 });
+            }
+
+            setActiveTab('dragon');
+          }}
+        />
+      )}
+
+      {/* PESTAÑA BREED */}
+      {activeTab === 'breed' && (
+        <BreedTab
+          allDragons={allDragons}
+          userProfile={userProfile}
+          setUserProfile={setUserProfile}
+          incubator={incubator}
+          setIncubator={setIncubator}
+          breedingCooldowns={breedingCooldowns}
+          setBreedingCooldowns={setBreedingCooldowns}
+          regenmonData={regenmon}
+        />
+      )}
 
       {/* Modal de reset */}
       {showResetConfirm && (
@@ -1384,14 +3090,94 @@ function App() {
   const [showLoginModal, setShowLoginModal] = useState(false)
   const [userData, setUserData] = useState(null)
 
+  // Hook de Supabase
+  const { saveToSupabase, loadFromSupabase, deleteFromSupabase } = useSupabaseSave()
+
+  // ============================================
+  // ESTADOS DE ECONOMÍA - v5.0
+  // ============================================
+  const [userProfile, setUserProfile] = useState({
+    level: 1,
+    exp: 0,
+    dragoncoins: 0,
+    hasClaimedWelcomeGift: false,
+    createdAt: Date.now(),
+  });
+
+  const [incubator, setIncubator] = useState({
+    slots: 1,
+    eggs: [],
+  });
+
+  const [habitats, setHabitats] = useState([
+    {
+      id: 'habitat_1',
+      element: null,
+      level: 1,
+      maxDragons: 2,
+      dragons: [],
+    }
+  ]);
+
+  const [allDragons, setAllDragons] = useState([]);
+
+  const [breedingCooldowns, setBreedingCooldowns] = useState({});
+
+  const [showWelcomeGift, setShowWelcomeGift] = useState(false);
+
+  // ============================================
+  // FUNCIÓN: AÑADIR EXPERIENCIA DE PERFIL
+  // ============================================
+  const addProfileExp = useCallback((expAmount) => {
+    setUserProfile(prev => {
+      let newExp = prev.exp + expAmount;
+      let newLevel = prev.level;
+      let coinsEarned = 0;
+
+      while (newLevel < 20 && newExp >= (PROFILE_EXP_TABLE[newLevel + 1] || Infinity)) {
+        newLevel++;
+        const reward = (newLevel - 1) * ECONOMY_CONFIG.profileLevelUpBaseReward;
+        coinsEarned += reward;
+        console.log(`🎉 ¡Perfil subió a nivel ${newLevel}! +${reward} DC`);
+      }
+
+      return {
+        ...prev,
+        exp: newExp,
+        level: newLevel,
+        dragoncoins: prev.dragoncoins + coinsEarned,
+      };
+    });
+  }, []);
+
   // ============================================
   // FUNCIONES DE GUARDADO - BASADO EN USUARIO
   // ============================================
 
-  const saveGame = useCallback(() => {
+  const saveGame = useCallback(async () => {
     if (!regenmon || !isAuthenticated || !user) return
 
     try {
+      // Sincronizar el dragón activo en allDragons ANTES de guardar
+      let syncedAllDragons = allDragons;
+      if (regenmon?.id) {
+        syncedAllDragons = allDragons.map(d => {
+          if (d.id === regenmon.id) {
+            return {
+              ...d,
+              name: regenmon.name,
+              element: regenmon.class,
+              dragonId: regenmon.dragonId,
+              level: regenmon.level,
+              exp: regenmon.exp,
+              maturityState: regenmon.maturityState,
+              stats: { ...stats },
+            };
+          }
+          return d;
+        });
+      }
+
       const saveData = {
         regenmon,
         stats,
@@ -1406,48 +3192,48 @@ function App() {
           currentView,
           hasRegenmon: true,
         },
+        userProfile,
+        incubator,
+        habitats,
+        allDragons: syncedAllDragons,
+        breedingCooldowns,
       }
 
-      // Usar la función del hook que construye la key correcta
-      saveUserData(SAVE_KEY, saveData)
-      console.log('💾 Partida guardada')
+      const userId = user.id || user.walletAddress
+      await saveToSupabase(userId, saveData)
+      console.log('☁️💾 Partida guardada en Supabase')
 
     } catch (error) {
       console.error('Error al guardar:', error)
     }
-  }, [regenmon, stats, resources, cooldowns, dailyUses, meta, currentView, isAuthenticated, user, saveUserData])
+  }, [regenmon, stats, resources, cooldowns, dailyUses, meta, currentView, isAuthenticated, user, saveToSupabase, userProfile, incubator, habitats, allDragons, breedingCooldowns])
 
-  const loadGame = useCallback(() => {
-    if (!isAuthenticated) return null
+  const loadGame = useCallback(async () => {
+    if (!isAuthenticated || !user) return null
 
     try {
-      const savedData = loadUserData(SAVE_KEY)
+      const userId = user.id || user.walletAddress
+      const savedData = await loadFromSupabase(userId)
 
       if (!savedData) {
         console.log('🆕 No hay partida guardada, iniciando nuevo juego')
         return null
       }
 
-      const data = savedData
-      console.log('📂 Partida cargada:', data)
-      return data
+      console.log('📂 Partida cargada desde Supabase')
+      return savedData
     } catch (error) {
       console.error('Error al cargar:', error)
       return null
     }
-  }, [isAuthenticated, loadUserData])
+  }, [isAuthenticated, user, loadFromSupabase])
 
-  const deleteSave = useCallback(() => {
-    if (!isAuthenticated) return
-
-    // Construir key correcta según el tipo de usuario
-    const saveKey = isGuest
-      ? SAVE_KEY
-      : `regenmon_user_${user?.id}_${SAVE_KEY}`
-
-    localStorage.removeItem(saveKey)
-    console.log('🗑️ Partida borrada:', saveKey)
-  }, [isAuthenticated, user?.id, isGuest])
+  const deleteSave = useCallback(async () => {
+    if (!isAuthenticated || !user) return
+    const userId = user.id || user.walletAddress
+    await deleteFromSupabase(userId)
+    console.log('🗑️ Partida borrada de Supabase')
+  }, [isAuthenticated, user, deleteFromSupabase])
 
   // ============================================
   // APLICAR DEGRADACIÓN PASIVA
@@ -1522,49 +3308,56 @@ function App() {
           isGuest: isGuest,
         })
 
-        // Construir la key de guardado correcta
-        const userSaveKey = isGuest
-          ? SAVE_KEY
-          : `regenmon_user_${user.id}_${SAVE_KEY}`
+        // Cargar partida desde Supabase
+        const userId = user.id || user.walletAddress
+        console.log('🔍 Buscando partida en Supabase para:', userId)
 
-        console.log('🔍 Buscando partida en:', userSaveKey)
+        const savedData = await loadFromSupabase(userId)
 
-        const savedDataStr = localStorage.getItem(userSaveKey)
+        if (savedData?.gameState?.hasRegenmon) {
+          console.log('✅ Restaurando partida desde Supabase')
 
-        if (savedDataStr) {
-          try {
-            const savedData = JSON.parse(savedDataStr)
+          setRegenmon(savedData.regenmon)
 
-            if (savedData.gameState?.hasRegenmon) {
-              console.log('✅ Restaurando partida guardada')
-
-              // Restaurar estado
-              setRegenmon(savedData.regenmon)
+          // Cargar stats del dragón activo si tiene sus propias stats en allDragons
+          if (savedData.allDragons && savedData.regenmon?.id) {
+            const activeDragonData = savedData.allDragons.find(d => d.id === savedData.regenmon.id)
+            if (activeDragonData?.stats) {
+              setStats(activeDragonData.stats)
+            } else {
               setStats(savedData.stats)
-              setResources(savedData.resources)
-              setCooldowns(savedData.cooldowns || { feed: 0, train: 0, play: 0, rest: 0 })
-              setDailyUses(savedData.dailyUses)
-              setMeta(savedData.meta)
-
-              // Verificar reset diario
-              const today = new Date().toDateString()
-              if (savedData.dailyUses?.lastReset !== today) {
-                setDailyUses({ feed: 0, train: 0, play: 0, lastReset: today })
-              }
-
-              // Aplicar degradación pasiva
-              if (savedData.meta?.lastSaved) {
-                applyPassiveDecay(savedData.meta.lastSaved)
-              }
-
-              // Ir directo al juego
-              setCurrentView('game')
-              console.log('✅ Partida restaurada, yendo al juego')
-              return
             }
-          } catch (e) {
-            console.error('Error al parsear partida:', e)
+          } else {
+            setStats(savedData.stats)
           }
+
+          setResources(savedData.resources)
+          setCooldowns(savedData.cooldowns || { feed: 0, train: 0, play: 0, rest: 0 })
+          setDailyUses(savedData.dailyUses)
+          setMeta(savedData.meta)
+
+          if (savedData.userProfile) setUserProfile(savedData.userProfile)
+          if (savedData.incubator) setIncubator(savedData.incubator)
+          if (savedData.habitats) setHabitats(savedData.habitats)
+          if (savedData.allDragons) setAllDragons(savedData.allDragons)
+          if (savedData.breedingCooldowns) setBreedingCooldowns(savedData.breedingCooldowns)
+
+          if (!savedData.userProfile?.hasClaimedWelcomeGift) {
+            setShowWelcomeGift(true)
+          }
+
+          const today = new Date().toDateString()
+          if (savedData.dailyUses?.lastReset !== today) {
+            setDailyUses({ feed: 0, train: 0, play: 0, lastReset: today })
+          }
+
+          if (savedData.meta?.lastSaved) {
+            applyPassiveDecay(savedData.meta.lastSaved)
+          }
+
+          setCurrentView('game')
+          console.log('✅ Partida restaurada desde Supabase')
+          return
         }
 
         // Usuario autenticado pero sin partida
@@ -1635,7 +3428,10 @@ function App() {
     setDailyUses(newDailyUses)
     setMeta(newMeta)
 
-    // GUARDAR INMEDIATAMENTE en localStorage
+    // Mostrar regalo de bienvenida para nuevos usuarios (v5.0)
+    setShowWelcomeGift(true)
+
+    // GUARDAR INMEDIATAMENTE en Supabase
     const saveData = {
       regenmon: newRegenmon,
       stats: newStats,
@@ -1647,10 +3443,25 @@ function App() {
         currentView: 'hatching',
         hasRegenmon: true,
       },
+      // Incluir datos de economía iniciales
+      userProfile: {
+        level: 1,
+        exp: 0,
+        dragoncoins: 0,
+        hasClaimedWelcomeGift: false,
+        createdAt: Date.now(),
+      },
+      incubator: { slots: 1, eggs: [] },
+      habitats: [{ id: 'habitat_1', element: null, level: 1, maxDragons: 2, dragons: [] }],
+      allDragons: [],
+      breedingCooldowns: {},
     }
 
-    saveUserData(SAVE_KEY, saveData)
-    console.log('💾 Registro guardado inmediatamente:', saveData)
+    const userId = user?.id || user?.walletAddress
+    if (userId) {
+      saveToSupabase(userId, saveData)
+    }
+    console.log('☁️💾 Registro guardado inmediatamente en Supabase:', saveData)
 
     setCurrentView('hatching')
   }
@@ -1671,6 +3482,26 @@ function App() {
     setDailyUses({ feed: 0, train: 0, play: 0, lastReset: new Date().toDateString() })
     setMeta({ lastSaved: 0, createdAt: 0 })
     setCurrentView('landing')
+
+    // Resetear estados de economía v5.0
+    setUserProfile({
+      level: 1,
+      exp: 0,
+      dragoncoins: 0,
+      hasClaimedWelcomeGift: false,
+      createdAt: Date.now(),
+    })
+    setIncubator({ slots: 1, eggs: [] })
+    setHabitats([{
+      id: 'habitat_1',
+      element: null,
+      level: 1,
+      maxDragons: 2,
+      dragons: [],
+    }])
+    setAllDragons([])
+    setBreedingCooldowns({})
+    setShowWelcomeGift(false)
 
     console.log('🗑️ Juego reiniciado')
   }
@@ -1696,7 +3527,27 @@ function App() {
       setMeta({ lastSaved: 0, createdAt: 0 })
       setUserData(null)
 
-      // 3. Ir a la landing page
+      // 3. Resetear estados de economía v5.0
+      setUserProfile({
+        level: 1,
+        exp: 0,
+        dragoncoins: 0,
+        hasClaimedWelcomeGift: false,
+        createdAt: Date.now(),
+      })
+      setIncubator({ slots: 1, eggs: [] })
+      setHabitats([{
+        id: 'habitat_1',
+        element: null,
+        level: 1,
+        maxDragons: 2,
+        dragons: [],
+      }])
+      setAllDragons([])
+      setBreedingCooldowns({})
+      setShowWelcomeGift(false)
+
+      // 4. Ir a la landing page
       setCurrentView('landing')
 
       console.log('✅ Logout completado - vista: landing')
@@ -1748,6 +3599,26 @@ function App() {
           regenmonData={regenmon}
           onHatchComplete={(dragonId) => {
             setRegenmon(prev => ({ ...prev, dragonId }))
+
+            // Agregar dragón inicial a allDragons (v5.0)
+            const initialDragon = {
+              id: `dragon_main_${Date.now()}`,
+              name: regenmon.name,
+              element: regenmon.class,
+              level: 1,
+              exp: 0,
+              maturityState: 1,
+              dragonId: dragonId,
+              habitatId: 'habitat_1',
+              isMain: true,
+            }
+            setAllDragons([initialDragon])
+
+            // Asignar elemento al habitat inicial
+            setHabitats(prev => prev.map(h =>
+              h.id === 'habitat_1' ? { ...h, element: regenmon.class, dragons: [initialDragon.id] } : h
+            ))
+
             setCurrentView('dragon-reveal')
           }}
         />
@@ -1777,8 +3648,34 @@ function App() {
           userData={userData}
           isGuest={isGuest}
           storagePrefix={user?.id ? `regenmon_user_${user.id}` : ''}
+          // Props de economía v5.0
+          userProfile={userProfile}
+          setUserProfile={setUserProfile}
+          incubator={incubator}
+          setIncubator={setIncubator}
+          habitats={habitats}
+          setHabitats={setHabitats}
+          allDragons={allDragons}
+          setAllDragons={setAllDragons}
+          breedingCooldowns={breedingCooldowns}
+          setBreedingCooldowns={setBreedingCooldowns}
+          addProfileExp={addProfileExp}
         />
       )}
+
+      {/* Modal de Regalo de Bienvenida v5.0 */}
+      <WelcomeGiftModal
+        isOpen={showWelcomeGift}
+        onClaim={() => {
+          setUserProfile(prev => ({
+            ...prev,
+            dragoncoins: prev.dragoncoins + ECONOMY_CONFIG.welcomeGift,
+            hasClaimedWelcomeGift: true,
+          }));
+          setShowWelcomeGift(false);
+          console.log('🎁 Regalo de bienvenida reclamado: +100 DC');
+        }}
+      />
 
       {/* Modal de Login - Visible en cualquier vista */}
       <LoginModal
