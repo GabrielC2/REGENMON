@@ -83,7 +83,7 @@ const ACTION_EFFECTS = {
 // CONFIGURACIÓN DE ECONOMÍA - v5.0
 // ============================================
 const ECONOMY_CONFIG = {
-  welcomeGift: 100,
+  welcomeGift: 500,
   dragonLevelUpReward: 1,
   profileLevelUpBaseReward: 10,
   profileExpPerDragonLevel: 50,
@@ -311,7 +311,7 @@ function WelcomeGiftModal({ isOpen, onClaim }) {
   };
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/90 backdrop-blur-sm">
+    <div className="fixed inset-0 z-[99999] flex items-center justify-center bg-black/90 backdrop-blur-sm">
       <div className="relative bg-gradient-to-b from-[#1a1a2e] to-[#0f0f1a] border border-yellow-500/30 rounded-3xl p-8 w-[90%] max-w-[400px] text-center overflow-hidden">
 
         {!claimed ? (
@@ -323,7 +323,7 @@ function WelcomeGiftModal({ isOpen, onClaim }) {
             <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-xl p-4 mb-6">
               <div className="flex items-center justify-center gap-3">
                 <img src="/assets/Moneda/Coin.png" alt="DC" style={{ width: '32px', height: '32px', objectFit: 'contain' }} />
-                <span className="text-2xl font-bold text-yellow-400">100 Dragoncoins</span>
+                <span className="text-2xl font-bold text-yellow-400">500 Dragoncoins</span>
               </div>
             </div>
 
@@ -340,7 +340,7 @@ function WelcomeGiftModal({ isOpen, onClaim }) {
               <div className="mb-4 flex justify-center"><img src="/assets/Moneda/Coin.png" alt="DC" style={{ width: '64px', height: '64px', objectFit: 'contain' }} className="animate-pulse" /></div>
               <h2 className="text-2xl font-bold text-yellow-400 mb-2">¡Felicidades!</h2>
               <p className="text-xl text-white">Acabas de obtener</p>
-              <p className="text-4xl font-bold text-yellow-400 mt-2">100 Dragoncoins</p>
+              <p className="text-4xl font-bold text-yellow-400 mt-2">500 Dragoncoins</p>
 
               <div className="absolute inset-0 pointer-events-none overflow-hidden">
                 {Array.from({ length: 20 }).map((_, i) => (
@@ -1510,7 +1510,7 @@ function GiftButton({ userProfile, setUserProfile }) {
     setTimeout(() => {
       setUserProfile(prev => ({
         ...prev,
-        dragoncoins: prev.dragoncoins + 100,
+        dragoncoins: prev.dragoncoins + 500,
         hasClaimedWelcomeGift: true,
       }));
 
@@ -1533,7 +1533,7 @@ function GiftButton({ userProfile, setUserProfile }) {
       </button>
 
       {showGiftModal && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/90 backdrop-blur-sm">
+        <div className="fixed inset-0 z-[99999] flex items-center justify-center bg-black/90 backdrop-blur-sm">
           <div className="relative bg-gradient-to-b from-[#1a1a2e] to-[#0f0f1a] border border-yellow-500/30 rounded-3xl p-8 w-[90%] max-w-[400px] text-center overflow-hidden">
 
             {!claimed ? (
@@ -1545,7 +1545,7 @@ function GiftButton({ userProfile, setUserProfile }) {
                 <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-xl p-4 mb-6">
                   <div className="flex items-center justify-center gap-3">
                     <img src="/assets/Moneda/Coin.png" alt="DC" style={{ width: '32px', height: '32px', objectFit: 'contain' }} />
-                    <span className="text-2xl font-bold text-yellow-400">100 Dragoncoins</span>
+                    <span className="text-2xl font-bold text-yellow-400">500 Dragoncoins</span>
                   </div>
                 </div>
 
@@ -1569,7 +1569,7 @@ function GiftButton({ userProfile, setUserProfile }) {
                   <div className="text-6xl mb-4">🎉</div>
                   <h2 className="text-2xl font-bold text-green-400 mb-2">¡Felicidades!</h2>
                   <p className="text-xl text-white">Obtuviste</p>
-                  <p className="text-4xl font-bold text-yellow-400 mt-2">+100 DC</p>
+                  <p className="text-4xl font-bold text-yellow-400 mt-2">+500 DC</p>
                 </div>
 
                 <div className="absolute inset-0 pointer-events-none overflow-hidden">
@@ -3701,7 +3701,7 @@ function App() {
             hasClaimedWelcomeGift: true,
           }));
           setShowWelcomeGift(false);
-          console.log('🎁 Regalo de bienvenida reclamado: +100 DC');
+          console.log('🎁 Regalo de bienvenida reclamado: +500 DC');
         }}
       />
 
